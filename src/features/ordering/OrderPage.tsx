@@ -24,7 +24,7 @@ function CarouselBanner() {
   const { data: website } = useQuery({
     queryKey: ['website'],
     queryFn: fetchWebsite,
-    staleTime: 1000 * 60 * 60,
+    staleTime: 1000 * 60 * 5,
   })
 
   const images = website?.carousel_images || []

@@ -96,6 +96,7 @@ export default function WebsitePage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-website'] })
+      void queryClient.invalidateQueries({ queryKey: ['website'] })
       alert('Website content saved!')
     },
     onSettled: () => setIsSubmitting(false)
