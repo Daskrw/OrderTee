@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PackageSearch, Tag, ChevronDown, ChevronUp } from 'lucide-react'
@@ -135,6 +135,38 @@ export default function OrderPage() {
     staleTime: 1000 * 60 * 5,
   })
 
+  // Handle hardware back button for drawers on mobile
+  useEffect(() => {
+    if (selectedProduct || cartOpen) {
+      window.history.pushState({ drawerOpen: true }, '')
+    }
+
+    const handlePopState = () => {
+      if (selectedProduct) setSelectedProduct(null)
+      if (cartOpen) setCartOpen(false)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [selectedProduct, cartOpen])
+
+  const closeProductDetail = () => {
+    setSelectedProduct(null)
+    if (window.history.state?.drawerOpen) {
+      window.history.back()
+    }
+  }
+
+  const closeCart = () => {
+    setCartOpen(false)
+    if (window.history.state?.drawerOpen) {
+      window.history.back()
+    }
+  }
+
   return (
     <>
       <div className="mx-auto max-w-4xl space-y-4 px-4 py-6">
@@ -213,7 +245,7 @@ export default function OrderPage() {
       {/* Product Detail Drawer */}
       <ProductDetailDrawer
         product={selectedProduct}
-        onClose={() => setSelectedProduct(null)}
+        onClose={closeProductDetail}
         isStoreClosed={isStoreOpen === false}
       />
 
@@ -221,7 +253,7 @@ export default function OrderPage() {
       <CartButton onClick={() => setCartOpen(true)} />
       <CartDrawer
         open={cartOpen}
-        onClose={() => setCartOpen(false)}
+        onClose={closeCart}
         isStoreClosed={isStoreOpen === false}
       />
     </>
