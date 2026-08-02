@@ -98,6 +98,7 @@ export interface Website {
   id: string
   logo_url: string | null
   banner_url: string | null
+  carousel_images: string[]
   promotion_text: string | null
   business_description: string | null
   opening_hours: string | null

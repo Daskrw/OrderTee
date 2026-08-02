@@ -17,11 +17,13 @@ export default function WebsitePage() {
   const [instagram, setInstagram] = useState('')
   const [line, setLine] = useState('')
   const [googleMapUrl, setGoogleMapUrl] = useState('')
+  const [carouselImages, setCarouselImages] = useState<string[]>([])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [promoDrawerOpen, setPromoDrawerOpen] = useState(false)
   const [editingPromo, setEditingPromo] = useState<Promotion | null>(null)
   const [isSavingPromo, setIsSavingPromo] = useState(false)
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false)
 
   const { data: website, isLoading: isWebsiteLoading } = useQuery({
     queryKey: ['admin-website'],
@@ -43,8 +45,40 @@ export default function WebsitePage() {
       setInstagram(website.instagram ?? '')
       setLine(website.line ?? '')
       setGoogleMapUrl(website.google_map_url ?? '')
+      setCarouselImages(website.carousel_images ?? [])
     }
   }, [website])
+
+  const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setIsUploadingBanner(true)
+      const file = e.target.files?.[0]
+      if (!file) return
+
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random()}.${fileExt}`
+      const filePath = `banners/${fileName}`
+
+      const { supabase } = await import('@/lib/supabase')
+      const { error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data } = supabase.storage.from('images').getPublicUrl(filePath)
+      setCarouselImages(prev => [...prev, data.publicUrl])
+    } catch (error) {
+      alert('Error uploading banner image!')
+      console.error(error)
+    } finally {
+      setIsUploadingBanner(false)
+    }
+  }
+
+  const removeBannerImage = (index: number) => {
+    setCarouselImages(prev => prev.filter((_, i) => i !== index))
+  }
 
   const websiteMutation = useMutation({
     mutationFn: async () => {
@@ -57,6 +91,7 @@ export default function WebsitePage() {
         instagram: instagram || null,
         line: line || null,
         google_map_url: googleMapUrl || null,
+        carousel_images: carouselImages,
       })
     },
     onSuccess: () => {
@@ -167,6 +202,45 @@ export default function WebsitePage() {
       {/* Website Info Form */}
       <form onSubmit={handleWebsiteSubmit} className="space-y-6">
         
+        {/* Advertisement Banners */}
+        <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
+          <h2 className="mb-4 text-base font-semibold text-[hsl(var(--foreground))]">ป้ายโฆษณา (Advertisement Banners)</h2>
+          <p className="mb-4 text-sm text-[hsl(var(--muted-foreground))]">ป้ายโฆษณาจะแสดงผลสลับกันทุก 10 วินาทีในหน้าร้านค้าของลูกค้า</p>
+          
+          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {carouselImages.map((img, idx) => (
+              <div key={idx} className="relative aspect-video overflow-hidden rounded-xl border border-[hsl(var(--border))]">
+                <img src={img} alt={`Banner ${idx + 1}`} className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeBannerImage(idx)}
+                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-red-500/80 text-white backdrop-blur-md hover:bg-red-500"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            
+            <label className="flex aspect-video cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[hsl(var(--border))] bg-[hsl(var(--background))]/50 transition-colors hover:bg-[hsl(var(--background))] hover:border-[hsl(var(--primary))]/50">
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleBannerUpload} 
+                disabled={isUploadingBanner}
+                className="hidden" 
+              />
+              {isUploadingBanner ? (
+                <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--primary))]" />
+              ) : (
+                <>
+                  <Plus className="h-6 w-6 text-[hsl(var(--muted-foreground))]" />
+                  <span className="mt-2 text-sm font-medium text-[hsl(var(--muted-foreground))]">เพิ่มรูปภาพ</span>
+                </>
+              )}
+            </label>
+          </div>
+        </div>
+
         {/* Text Content */}
         <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm">
           <h2 className="mb-4 text-base font-semibold text-[hsl(var(--foreground))]">Business Details</h2>

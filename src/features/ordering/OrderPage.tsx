@@ -5,6 +5,7 @@ import { PackageSearch, Tag, ChevronDown, ChevronUp } from 'lucide-react'
 import { fetchProducts } from '@/services/products'
 import { fetchCategories } from '@/services/categories'
 import { fetchActivePromotions } from '@/services/promotions'
+import { fetchWebsite } from '@/services/website'
 import { SearchBar } from './components/SearchBar'
 import { CategoryFilter } from './components/CategoryFilter'
 import { ProductCard } from './components/ProductCard'
@@ -16,6 +17,56 @@ import { ProductGridSkeleton } from '@/components/common/Skeleton'
 import { useStoreStatus } from '@/hooks/use-store-status'
 import type { ProductListItem } from '@/services/products'
 import { formatCurrency } from '@/lib/utils'
+
+function CarouselBanner() {
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  const { data: website } = useQuery({
+    queryKey: ['website'],
+    queryFn: fetchWebsite,
+    staleTime: 1000 * 60 * 60,
+  })
+
+  const images = website?.carousel_images || []
+
+  useEffect(() => {
+    if (images.length <= 1) return
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % images.length)
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [images.length])
+
+  if (images.length === 0) return null
+
+  return (
+    <div className="relative mb-6 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 shadow-sm md:aspect-[21/9]">
+      <AnimatePresence>
+        <motion.img
+          key={currentIndex}
+          src={images[currentIndex]}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.8 }}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      </AnimatePresence>
+      {images.length > 1 && (
+        <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-10">
+          {images.map((_, i) => (
+            <div
+              key={i}
+              className={`h-1.5 rounded-full shadow-sm transition-all ${
+                i === currentIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function PromotionsBanner() {
   const [expanded, setExpanded] = useState(false)
@@ -170,6 +221,7 @@ export default function OrderPage() {
   return (
     <>
       <div className="mx-auto max-w-4xl space-y-4 px-4 py-6">
+        <CarouselBanner />
         <PromotionsBanner />
 
         {/* Store closed banner */}
