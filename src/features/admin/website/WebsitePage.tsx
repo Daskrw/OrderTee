@@ -99,6 +99,10 @@ export default function WebsitePage() {
       void queryClient.invalidateQueries({ queryKey: ['website'] })
       alert('Website content saved!')
     },
+    onError: (error: any) => {
+      console.error(error)
+      alert(`Failed to save! Error: ${error?.message || 'Unknown error'}. Did you run the SQL migration?`)
+    },
     onSettled: () => setIsSubmitting(false)
   })
 
