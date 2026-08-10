@@ -24,8 +24,10 @@ export function CartDrawer({ open, onClose, isStoreClosed }: CartDrawerProps) {
   const { discountAmount, finalTotal, appliedPromotions } = useCartPromotions()
 
   const handleCheckout = () => {
-    onClose()
-    navigate('/order/checkout')
+    // Replace the current history entry (which is the drawer state)
+    // with the checkout page, so that when the user presses back,
+    // they go back to the order page directly.
+    navigate('/order/checkout', { replace: true })
   }
 
   return (
