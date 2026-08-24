@@ -128,6 +128,35 @@ export function OrderDetailDrawer({ order, onClose }: OrderDetailDrawerProps) {
                 </span>
               </div>
 
+              {/* Payment Slip Display (PromptPay) */}
+              {order.payment_slip_url && (
+                <div className="mt-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-[hsl(var(--foreground))]">
+                    <span>🧾 สลิปการโอนเงิน (Payment Slip):</span>
+                    <a
+                      href={order.payment_slip_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[hsl(var(--primary))] hover:underline text-[11px]"
+                    >
+                      ดูรูปเต็ม ↗
+                    </a>
+                  </div>
+                  <a
+                    href={order.payment_slip_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block overflow-hidden rounded-lg border border-[hsl(var(--border))] max-h-48 hover:opacity-90 transition-opacity"
+                  >
+                    <img
+                      src={order.payment_slip_url}
+                      alt="Payment Slip"
+                      className="w-full object-contain max-h-48 bg-black/5"
+                    />
+                  </a>
+                </div>
+              )}
+
               {/* Scheduled Route Delivery Details */}
               {(order.order_type === 'scheduled_route' || order.scheduled_delivery_date) && (
                 <div className="mt-2 rounded-xl bg-[hsl(var(--primary))]/5 border border-[hsl(var(--primary))]/20 p-3 space-y-1.5">

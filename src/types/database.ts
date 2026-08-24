@@ -97,6 +97,7 @@ export interface Order {
   customer_phone: string
   order_type: OrderType
   payment_method: PaymentMethod
+  payment_slip_url: string | null
   delivery_address: string | null
   delivery_date: string | null
   delivery_fee: number

@@ -290,6 +290,19 @@ export default function TrackOrderPage() {
               {order.payment_method === 'promptpay' ? '📱 สแกนจ่าย PromptPay (061-608-0720)' : '💵 ชำระเงินสด (Cash)'}
             </span>
           </div>
+          {order.payment_slip_url && (
+            <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1">
+              <span>สลิปการโอนเงิน</span>
+              <a
+                href={order.payment_slip_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[hsl(var(--primary))] font-semibold hover:underline"
+              >
+                ดูรูปสลิป ↗
+              </a>
+            </div>
+          )}
           <div className="flex items-center justify-between font-bold text-lg pt-1">
             <span className="text-[hsl(var(--foreground))]">ยอดรวมทั้งหมด</span>
             <span className="text-[hsl(var(--primary))]">{formatCurrency(order.total)}</span>

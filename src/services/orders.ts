@@ -14,6 +14,7 @@ export interface CreateOrderInput {
   customerPhone: string
   orderType: OrderType
   paymentMethod?: PaymentMethod
+  paymentSlipUrl?: string | null
   deliveryAddress?: string | null
   deliveryDate?: string | null
   deliveryFee: number
@@ -25,6 +26,53 @@ export interface CreateOrderInput {
   notes?: string | null
   cartItems: CartItem[]
   total: number
+}
+
+const ALLOWED_SLIP_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const ALLOWED_SLIP_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
+const MAX_SLIP_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
+
+/**
+ * Validates and uploads payment slip image to Supabase Storage
+ */
+export async function uploadPaymentSlip(file: File): Promise<string> {
+  if (!file) {
+    throw new Error('กรุณาเลือกไฟล์สลิปการโอนเงิน')
+  }
+
+  // 1. Validate MIME type
+  if (!ALLOWED_SLIP_MIME_TYPES.includes(file.type.toLowerCase())) {
+    throw new Error('อนุญาตเฉพาะไฟล์รูปภาพ (JPG, PNG, WEBP) เท่านั้น ไม่อนุญาตไฟล์ PDF หรือเอกสารอื่นๆ')
+  }
+
+  // 2. Validate file extension
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  if (!ALLOWED_SLIP_EXTENSIONS.includes(ext)) {
+    throw new Error('นามสกุลไฟล์ไม่ถูกต้อง รองรับเฉพาะ .jpg, .jpeg, .png, .webp')
+  }
+
+  // 3. Validate file size
+  if (file.size > MAX_SLIP_FILE_SIZE_BYTES) {
+    throw new Error('ขนาดไฟล์สลิปต้องไม่เกิน 5 MB')
+  }
+
+  const fileName = `payment-slips/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`
+
+  const { error: uploadError } = await supabase.storage
+    .from('images')
+    .upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type,
+    })
+
+  if (uploadError) {
+    console.error('Slip upload error:', uploadError)
+    throw new Error('เกิดข้อผิดพลาดในการอัปโหลดสลิป กรุณาลองใหม่อีกครั้ง')
+  }
+
+  const { data } = supabase.storage.from('images').getPublicUrl(fileName)
+  return data.publicUrl
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<Order> {
@@ -52,6 +100,13 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     }
   }
 
+  // Payment Method Slip Validation
+  if (input.paymentMethod === 'promptpay') {
+    if (!input.paymentSlipUrl || !input.paymentSlipUrl.trim()) {
+      throw new Error('กรุณาแนบสลิปการโอนเงินก่อนยืนยันคำสั่งซื้อ (Please upload your payment slip before confirming the order)')
+    }
+  }
+
   const trackingToken = generateTrackingToken()
 
   // 1. Insert order — triggers auto-generate order_number and queue_number
@@ -63,6 +118,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     customer_phone: input.customerPhone.trim(),
     order_type: input.orderType,
     payment_method: input.paymentMethod || 'cash',
+    payment_slip_url: input.paymentMethod === 'promptpay' ? input.paymentSlipUrl : null,
     delivery_address: input.deliveryAddress ?? null,
     delivery_date: input.deliveryDate ?? input.scheduledDeliveryDate ?? null,
     delivery_fee: input.deliveryFee,

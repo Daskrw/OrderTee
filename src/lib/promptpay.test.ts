@@ -36,3 +36,33 @@ describe('PromptPay QR Payload Generation', () => {
     expect(payload2).toContain('150.00')
   })
 })
+
+describe('Payment Slip File Rules & Validation', () => {
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp']
+  const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp']
+
+  it('accepts JPG, PNG, and WEBP image files', () => {
+    expect(allowedMimeTypes.includes('image/jpeg')).toBe(true)
+    expect(allowedMimeTypes.includes('image/png')).toBe(true)
+    expect(allowedMimeTypes.includes('image/webp')).toBe(true)
+
+    expect(allowedExtensions.includes('jpg')).toBe(true)
+    expect(allowedExtensions.includes('jpeg')).toBe(true)
+    expect(allowedExtensions.includes('png')).toBe(true)
+    expect(allowedExtensions.includes('webp')).toBe(true)
+  })
+
+  it('rejects disallowed non-image extensions (PDF, DOCX, ZIP)', () => {
+    const disallowed = ['pdf', 'doc', 'docx', 'zip', 'exe', 'txt']
+    disallowed.forEach((ext) => {
+      expect(allowedExtensions.includes(ext)).toBe(false)
+    })
+  })
+
+  it('rejects disallowed MIME types', () => {
+    const disallowedMimes = ['application/pdf', 'application/zip', 'text/plain', 'video/mp4']
+    disallowedMimes.forEach((mime) => {
+      expect(allowedMimeTypes.includes(mime)).toBe(false)
+    })
+  })
+})

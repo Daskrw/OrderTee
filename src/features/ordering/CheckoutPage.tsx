@@ -25,11 +25,14 @@ import {
   QrCode,
   Copy,
   Check,
+  Upload,
+  ImageIcon,
+  Trash2,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useCartStore, selectCartTotal } from '@/stores/cart-store'
 import { useCartPromotions } from '@/hooks/useCartPromotions'
-import { createOrder } from '@/services/orders'
+import { createOrder, uploadPaymentSlip } from '@/services/orders'
 import { fetchActiveUpcomingSchedules } from '@/services/delivery'
 import { formatCurrency } from '@/lib/utils'
 import {
@@ -107,6 +110,11 @@ export default function CheckoutPage() {
   const [, setSuccessOrder] = useState<Order | null>(null)
   const [copiedPhone, setCopiedPhone] = useState(false)
 
+  // Payment Slip State (Required for PromptPay)
+  const [slipFile, setSlipFile] = useState<File | null>(null)
+  const [slipPreviewUrl, setSlipPreviewUrl] = useState<string | null>(null)
+  const [slipError, setSlipError] = useState('')
+
   // Real-time time window tracking (Updates every 10 seconds)
   const [currentTime, setCurrentTime] = useState(new Date())
   useEffect(() => {
@@ -170,6 +178,13 @@ export default function CheckoutPage() {
   const selectedDate = watch('scheduledDeliveryDate')
   const selectedScheduleId = watch('scheduledDeliveryScheduleId')
 
+  // Clear slip error when switching payment method
+  useEffect(() => {
+    if (paymentMethod === 'cash') {
+      setSlipError('')
+    }
+  }, [paymentMethod])
+
   // Available locations for the currently selected scheduled date
   const locationsForDate = useMemo(() => {
     if (!selectedDate) return []
@@ -218,10 +233,52 @@ export default function CheckoutPage() {
     setTimeout(() => setCopiedPhone(false), 2500)
   }
 
+  // Handle Slip Selection & Client Validation
+  const handleSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSlipError('')
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const allowedExts = ['jpg', 'jpeg', 'png', 'webp']
+
+    if (!allowedTypes.includes(file.type.toLowerCase()) && !allowedExts.includes(ext)) {
+      setSlipError('อนุญาตเฉพาะไฟล์รูปภาพ (JPG, PNG, WEBP) เท่านั้น ไม่อนุญาตไฟล์ PDF หรือเอกสารอื่นๆ')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSlipError('ขนาดไฟล์สลิปต้องไม่เกิน 5 MB')
+      return
+    }
+
+    setSlipFile(file)
+    const preview = URL.createObjectURL(file)
+    setSlipPreviewUrl(preview)
+  }
+
+  const removeSlip = () => {
+    setSlipFile(null)
+    if (slipPreviewUrl) {
+      URL.revokeObjectURL(slipPreviewUrl)
+    }
+    setSlipPreviewUrl(null)
+    setSlipError('')
+  }
+
   // Submit Order
   const onSubmit = async (data: CheckoutForm) => {
     setIsSubmitting(true)
     setServerError('')
+    setSlipError('')
+
+    // Validate Slip for PromptPay
+    if (data.paymentMethod === 'promptpay' && !slipFile) {
+      setSlipError('กรุณาแนบสลิปการโอนเงินก่อนยืนยันคำสั่งซื้อ (Please upload your payment slip before confirming the order)')
+      setIsSubmitting(false)
+      return
+    }
 
     try {
       let finalDeliveryAddress: string | null = null
@@ -230,6 +287,12 @@ export default function CheckoutPage() {
       let scheduledDeliveryLocationName: string | null = null
       let scheduledDeliveryBuilding: string | null = null
       let scheduledDeliveryRoute: string | null = null
+      let uploadedSlipUrl: string | null = null
+
+      // Upload Slip if PromptPay
+      if (data.paymentMethod === 'promptpay' && slipFile) {
+        uploadedSlipUrl = await uploadPaymentSlip(slipFile)
+      }
 
       if (data.orderType === 'pickup') {
         if (!isPickupAllowed()) {
@@ -258,6 +321,7 @@ export default function CheckoutPage() {
         customerPhone: data.customerPhone,
         orderType: data.orderType,
         paymentMethod: data.paymentMethod,
+        paymentSlipUrl: uploadedSlipUrl,
         deliveryFee,
         deliveryAddress: finalDeliveryAddress,
         scheduledDeliveryDate,
@@ -966,6 +1030,96 @@ export default function CheckoutPage() {
                     <p className="text-[11px] text-[hsl(var(--muted-foreground))] pt-1">
                       💡 สแกน QR ด้วยแอปธนาคาร ยอดเงินจะถูกกรอกให้อัตโนมัติตรงตามออเดอร์
                     </p>
+                  </div>
+
+                  {/* Section 4: Slip Upload Field (Required for PromptPay) */}
+                  <div className="mt-5 border-t border-[hsl(var(--border))] pt-4 text-left">
+                    <div className="mb-2 flex items-center justify-between">
+                      <label className="text-xs font-bold text-[hsl(var(--foreground))] flex items-center gap-1.5">
+                        <Upload className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
+                        แนบสลิปการโอนเงิน (Payment Slip) <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[10px] font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-full">
+                        จำเป็นต้องแนบสลิป
+                      </span>
+                    </div>
+
+                    {!slipPreviewUrl ? (
+                      <div>
+                        <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 text-center transition-all hover:border-[hsl(var(--primary))] hover:bg-[hsl(var(--accent))]/40">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] mb-2">
+                            <ImageIcon className="h-5 w-5" />
+                          </div>
+                          <span className="text-xs font-bold text-[hsl(var(--foreground))]">
+                            คลิกเพื่อเลือกไฟล์สลิป หรือ ถ่ายรูปสลิป
+                          </span>
+                          <span className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
+                            รองรับไฟล์ JPG, PNG, WEBP (ขนาดไม่เกิน 5 MB)
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                            onChange={handleSlipChange}
+                            className="sr-only"
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={slipPreviewUrl}
+                            alt="Payment Slip Preview"
+                            className="h-20 w-20 rounded-xl object-cover border border-[hsl(var(--border))] shadow-sm"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <span className="truncate">{slipFile?.name || 'สลิปการโอนเงิน'}</span>
+                            </div>
+                            {slipFile && (
+                              <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-0.5">
+                                ขนาด: {(slipFile.size / 1024).toFixed(1)} KB
+                              </p>
+                            )}
+                            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">
+                              ✓ พร้อมส่งพร้อมคำสั่งซื้อ
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-[hsl(var(--border))]/60 pt-2">
+                          <label className="cursor-pointer rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--accent))] transition-colors">
+                            เปลี่ยนรูปสลิป
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                              onChange={handleSlipChange}
+                              className="sr-only"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={removeSlip}
+                            className="flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-500/20 transition-colors"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            ลบรูป
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {slipError && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-2.5 text-xs font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1.5"
+                      >
+                        <AlertCircle className="h-4 w-4 shrink-0 text-rose-500" />
+                        <span>{slipError}</span>
+                      </motion.div>
+                    )}
                   </div>
                 </div>
               </motion.div>
