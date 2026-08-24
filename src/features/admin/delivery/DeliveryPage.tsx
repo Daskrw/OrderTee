@@ -19,7 +19,7 @@ import {
   Layers,
   CheckSquare,
   Square,
-  AlertTriangle,
+  Sparkles,
 } from 'lucide-react'
 import {
   fetchDeliveryLocations,
@@ -30,7 +30,7 @@ import {
   createDeliverySchedule,
   updateDeliverySchedule,
   deleteDeliverySchedule,
-  bulkCreateOrUpdateDeliverySchedules,
+  bulkCreateOrUpdateMultiDateLocationMatrix,
   bulkUpdateSchedulesStatus,
   bulkDeleteSchedulesByDates,
 } from '@/services/delivery'
@@ -52,7 +52,7 @@ export default function DeliveryPage() {
   const [calYear, setCalYear] = useState(currentBkk.year)
   const [calMonth, setCalMonth] = useState(currentBkk.month) // 1 - 12
 
-  // Multi-date selection state (persist across month changes!)
+  // Multi-date selection state (persist across month navigation!)
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
 
   // Single Date Modal State (to view/edit individual day)
@@ -61,7 +61,7 @@ export default function DeliveryPage() {
   const [editingSchedule, setEditingSchedule] = useState<DeliverySchedule | null>(null)
 
   // Single Date Quick Form
-  const [scheduleForm, setScheduleForm] = useState({
+  const [singleScheduleForm, setSingleScheduleForm] = useState({
     location_id: '',
     location_name: '',
     building: '',
@@ -69,19 +69,15 @@ export default function DeliveryPage() {
     description: '',
     is_active: true,
   })
-  const [scheduleFormError, setScheduleFormError] = useState('')
+  const [singleScheduleFormError, setSingleScheduleFormError] = useState('')
 
-  // Bulk Configuration Modal State
+  // Bulk Configuration Modal State (Multi-Date × Multi-Location)
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false)
   const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false)
-  const [bulkForm, setBulkForm] = useState({
-    location_id: '',
-    location_name: '',
-    building: '',
-    route_name: '',
-    description: '',
-    is_active: true,
-  })
+  const [bulkSelectedLocationIds, setBulkSelectedLocationIds] = useState<Set<string>>(new Set())
+  const [bulkLocationSearch, setBulkLocationSearch] = useState('')
+  const [bulkDescription, setBulkDescription] = useState('')
+  const [bulkIsActive, setBulkIsActive] = useState(true)
   const [bulkFormError, setBulkFormError] = useState('')
   const [bulkSuccessMessage, setBulkSuccessMessage] = useState('')
 
@@ -108,6 +104,24 @@ export default function DeliveryPage() {
     queryKey: ['admin-delivery-schedules'],
     queryFn: fetchDeliverySchedules,
   })
+
+  // Active locations only for new assignments
+  const activeLocations = useMemo(() => {
+    return locations.filter((loc) => loc.is_active)
+  }, [locations])
+
+  // Filtered active locations in bulk modal by search term
+  const filteredBulkLocations = useMemo(() => {
+    const q = bulkLocationSearch.toLowerCase().trim()
+    if (!q) return activeLocations
+    return activeLocations.filter(
+      (l) =>
+        l.name.toLowerCase().includes(q) ||
+        (l.building && l.building.toLowerCase().includes(q)) ||
+        (l.route_name && l.route_name.toLowerCase().includes(q)) ||
+        (l.description && l.description.toLowerCase().includes(q))
+    )
+  }, [activeLocations, bulkLocationSearch])
 
   // Map schedules by date string
   const schedulesByDate = useMemo(() => {
@@ -191,6 +205,32 @@ export default function DeliveryPage() {
     return Array.from(selectedDates).sort()
   }, [selectedDates])
 
+  // Selected locations list for bulk modal
+  const bulkSelectedLocationsList = useMemo(() => {
+    return activeLocations.filter((l) => bulkSelectedLocationIds.has(l.id))
+  }, [activeLocations, bulkSelectedLocationIds])
+
+  // Multi-location selection helpers for bulk modal
+  const toggleLocationSelection = (locId: string) => {
+    setBulkSelectedLocationIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(locId)) {
+        next.delete(locId)
+      } else {
+        next.add(locId)
+      }
+      return next
+    })
+  }
+
+  const selectAllBulkLocations = () => {
+    setBulkSelectedLocationIds(new Set(filteredBulkLocations.map((l) => l.id)))
+  }
+
+  const clearAllBulkLocations = () => {
+    setBulkSelectedLocationIds(new Set())
+  }
+
   // ==========================================
   // Single Schedule Mutations
   // ==========================================
@@ -200,18 +240,18 @@ export default function DeliveryPage() {
       if (!isStrictlyFutureDate(singleDateModal)) {
         throw new Error('วันที่ต้องเป็นวันในอนาคตเท่านั้น')
       }
-      if (!scheduleForm.location_name.trim()) {
+      if (!singleScheduleForm.location_name.trim()) {
         throw new Error('กรุณาระบุหรือเลือกสถานที่จัดส่ง')
       }
 
       if (editingSchedule) {
         return updateDeliverySchedule(editingSchedule.id, {
-          ...scheduleForm,
+          ...singleScheduleForm,
           delivery_date: singleDateModal,
         })
       } else {
         return createDeliverySchedule({
-          ...scheduleForm,
+          ...singleScheduleForm,
           delivery_date: singleDateModal,
         })
       }
@@ -222,7 +262,7 @@ export default function DeliveryPage() {
       void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
       setIsAddingLocationToSingleDate(false)
       setEditingSchedule(null)
-      setScheduleForm({
+      setSingleScheduleForm({
         location_id: '',
         location_name: '',
         building: '',
@@ -230,10 +270,10 @@ export default function DeliveryPage() {
         description: '',
         is_active: true,
       })
-      setScheduleFormError('')
+      setSingleScheduleFormError('')
     },
     onError: (err: any) => {
-      setScheduleFormError(err.message || 'เกิดข้อผิดพลาดในการบันทึก')
+      setSingleScheduleFormError(err.message || 'เกิดข้อผิดพลาดในการบันทึก')
     },
   })
 
@@ -244,9 +284,7 @@ export default function DeliveryPage() {
       void queryClient.invalidateQueries({ queryKey: ['delivery-schedules'] })
       void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
     },
-    onError: (err: any) => {
-      alert(err.message || 'เกิดข้อผิดพลาดในการลบ')
-    },
+    onError: (err: any) => alert(err.message || 'เกิดข้อผิดพลาดในการลบ'),
   })
 
   const toggleScheduleActive = async (sch: DeliverySchedule) => {
@@ -260,14 +298,21 @@ export default function DeliveryPage() {
   }
 
   // ==========================================
-  // Bulk Mutations
+  // Bulk Multi-Date × Multi-Location Matrix Mutation
   // ==========================================
-  const bulkApplyMutation = useMutation({
+  const bulkMatrixMutation = useMutation({
     mutationFn: async () => {
       if (selectedDatesList.length === 0) throw new Error('กรุณาเลือกวันที่')
-      if (!bulkForm.location_name.trim()) throw new Error('กรุณากรอกชื่อสถานที่')
+      if (bulkSelectedLocationIds.size === 0) throw new Error('กรุณาเลือกสถานที่จัดส่งอย่างน้อย 1 แห่ง')
 
-      return bulkCreateOrUpdateDeliverySchedules(selectedDatesList, bulkForm)
+      return bulkCreateOrUpdateMultiDateLocationMatrix(
+        selectedDatesList,
+        Array.from(bulkSelectedLocationIds),
+        {
+          description: bulkDescription,
+          is_active: bulkIsActive,
+        }
+      )
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['admin-delivery-schedules'] })
@@ -275,13 +320,14 @@ export default function DeliveryPage() {
       void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
 
       setBulkSuccessMessage(
-        `กำหนดรอบจัดส่งเรียบร้อยแล้วทั้งหมด ${result.totalSuccess} วัน (${result.createdCount} วันใหม่, ${result.updatedCount} วันที่มีอยู่แล้ว)`
+        `บันทึกสำเร็จทั้งหมด ${result.totalSchedules} รอบจัดส่ง (${result.totalDates} วัน × ${result.totalLocations} สถานที่)`
       )
       setIsBulkModalOpen(false)
       setShowBulkConfirmModal(false)
       clearSelection()
+      setBulkSelectedLocationIds(new Set())
 
-      setTimeout(() => setBulkSuccessMessage(''), 5000)
+      setTimeout(() => setBulkSuccessMessage(''), 6000)
     },
     onError: (err: any) => {
       setBulkFormError(err.message || 'เกิดข้อผิดพลาดในการบันทึกแบบกลุ่ม')
@@ -314,15 +360,11 @@ export default function DeliveryPage() {
 
   const openBulkConfigureModal = () => {
     if (selectedDatesList.length === 0) return
-    setBulkForm({
-      location_id: '',
-      location_name: '',
-      building: '',
-      route_name: '',
-      description: '',
-      is_active: true,
-    })
+    setBulkLocationSearch('')
+    setBulkDescription('')
+    setBulkIsActive(true)
     setBulkFormError('')
+    // Default select all active locations or clear based on preference
     setIsBulkModalOpen(true)
   }
 
@@ -368,16 +410,16 @@ export default function DeliveryPage() {
   })
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-28">
+    <div className="mx-auto max-w-6xl space-y-6 pb-32">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[hsl(var(--foreground))] flex items-center gap-2.5">
             <CalendarIcon className="h-6 w-6 text-[hsl(var(--primary))]" />
-            ปฏิทินรอบจัดส่ง (Multi-Date Delivery Calendar)
+            ปฏิทินรอบจัดส่ง (Multi-Date & Multi-Location Calendar)
           </h1>
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            คลิกเลือกวันที่ได้หลายวันพร้อมกันเพื่อกำหนดรอบจัดส่งสินค้า (Scheduled Route Delivery) ในครั้งเดียว
+            เลือกหลายวัน + เลือกหลายสถานที่เพื่อสร้างรอบจัดส่งสินค้า (Scheduled Route Delivery) ในครั้งเดียว
           </p>
         </div>
 
@@ -658,8 +700,8 @@ export default function DeliveryPage() {
                   onClick={openBulkConfigureModal}
                   className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90 transition-all active:scale-[0.98]"
                 >
-                  <Plus className="h-4 w-4" />
-                  กำหนดจุดส่งพร้อมกัน (Apply to {selectedDates.size} Dates)
+                  <Sparkles className="h-4 w-4" />
+                  เลือกสถานที่และกำหนดรอบ ({selectedDates.size} วัน)
                 </button>
 
                 <button
@@ -706,7 +748,7 @@ export default function DeliveryPage() {
       </AnimatePresence>
 
       {/* ======================================================== */}
-      {/* MODAL 1: BULK CONFIGURATION PANEL (Configure Selected) */}
+      {/* MODAL 1: BULK CONFIGURATION PANEL (Multi-Date × Multi-Location) */}
       {/* ======================================================== */}
       <AnimatePresence>
         {isBulkModalOpen && (
@@ -715,15 +757,15 @@ export default function DeliveryPage() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl"
+              className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl"
             >
               <div className="mb-4 flex items-center justify-between border-b border-[hsl(var(--border))] pb-3">
                 <div>
                   <h2 className="text-lg font-bold text-[hsl(var(--foreground))]">
-                    กำหนดรอบจัดส่งพร้อมกัน ({selectedDates.size} วัน)
+                    กำหนดรอบจัดส่งแบบกลุ่ม (Multi-Location Bulk Setup)
                   </h2>
                   <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    กำหนดสถานที่และรายละเอียด 1 ครั้ง และนำไปสร้างรอบให้ทุกวันที่เลือก
+                    เลือกหลายสถานที่พร้อมกันเพื่อนำไปจัดรอบให้กับ {selectedDates.size} วันที่เลือก
                   </p>
                 </div>
                 <button
@@ -735,11 +777,11 @@ export default function DeliveryPage() {
               </div>
 
               {/* Selected Dates Chips Preview */}
-              <div className="mb-4 rounded-2xl bg-[hsl(var(--muted))]/40 p-3">
+              <div className="mb-4 rounded-2xl bg-[hsl(var(--muted))]/40 p-3.5">
                 <label className="text-[11px] font-bold text-[hsl(var(--muted-foreground))] uppercase block mb-1.5">
                   วันที่เลือก ({selectedDates.size} วัน):
                 </label>
-                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
                   {selectedDatesList.map((d) => (
                     <span
                       key={d}
@@ -757,101 +799,118 @@ export default function DeliveryPage() {
                 </div>
               )}
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (!bulkForm.location_name.trim()) {
-                    setBulkFormError('กรุณากรอกชื่อสถานที่จัดส่ง')
-                    return
-                  }
-                  setShowBulkConfirmModal(true)
-                }}
-                className="space-y-3.5"
-              >
-                {locations.length > 0 && (
+              {/* Section 1: Multi-Select Existing Locations */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                      เลือกจากสถานที่ที่บันทึกไว้ (Presets)
+                    <label className="text-sm font-bold text-[hsl(var(--foreground))] flex items-center gap-1.5">
+                      <MapPin className="h-4 w-4 text-[hsl(var(--primary))]" />
+                      เลือกสถานที่จัดส่ง (Select Existing Locations) <span className="text-rose-500">*</span>
                     </label>
-                    <select
-                      value={bulkForm.location_id}
-                      onChange={(e) => {
-                        const loc = locations.find((l) => l.id === e.target.value)
-                        if (loc) {
-                          setBulkForm((prev) => ({
-                            ...prev,
-                            location_id: loc.id,
-                            location_name: loc.name,
-                            building: loc.building || '',
-                            route_name: loc.route_name || '',
-                            description: loc.description || prev.description,
-                          }))
-                        } else {
-                          setBulkForm((prev) => ({ ...prev, location_id: '' }))
-                        }
-                      }}
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2.5 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                    >
-                      <option value="">-- กรอกเอง หรือ เลือกจากสถานที่ที่บันทึกไว้ --</option>
-                      {locations.map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.name} {loc.building ? `(${loc.building})` : ''} {loc.route_name ? `• ${loc.route_name}` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <span className="text-xs font-semibold text-[hsl(var(--primary))]">
+                      เลือกแล้ว {bulkSelectedLocationIds.size} แห่ง
+                    </span>
                   </div>
-                )}
 
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                      ชื่อสถานที่ / จุดส่ง <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="เช่น ABC Tower หรือ Silom CBD"
-                      value={bulkForm.location_name}
-                      onChange={(e) => setBulkForm({ ...bulkForm, location_name: e.target.value })}
-                      required
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                      ชื่ออาคาร / ตึก (Building)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="เช่น อาคาร 1"
-                      value={bulkForm.building}
-                      onChange={(e) => setBulkForm({ ...bulkForm, building: e.target.value })}
-                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                    />
+                  {/* Multi-Select Helpers */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllBulkLocations}
+                      className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--accent))]"
+                    >
+                      เลือกทั้งหมด ({filteredBulkLocations.length})
+                    </button>
+                    {bulkSelectedLocationIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearAllBulkLocations}
+                        className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1 text-xs font-semibold text-[hsl(var(--muted-foreground))] hover:text-rose-500"
+                      >
+                        ล้างที่เลือก
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                    ชื่อเส้นทาง (Route Name)
-                  </label>
+                {/* Location Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" />
                   <input
                     type="text"
-                    placeholder="เช่น Route A - สีลม"
-                    value={bulkForm.route_name}
-                    onChange={(e) => setBulkForm({ ...bulkForm, route_name: e.target.value })}
-                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                    placeholder="ค้นหาชื่อสถานที่, อาคาร, เส้นทาง..."
+                    value={bulkLocationSearch}
+                    onChange={(e) => setBulkLocationSearch(e.target.value)}
+                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] pl-8 pr-3 py-1.5 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
                   />
                 </div>
 
+                {/* Locations Checkbox Grid */}
+                {activeLocations.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[hsl(var(--border))] p-6 text-center text-xs text-[hsl(var(--muted-foreground))]">
+                    ยังไม่มีสถานที่ที่บันทึกไว้ในระบบ กรุณาเพิ่มสถานที่ในแท็บ "สถานที่ที่บันทึกไว้" ก่อน
+                  </div>
+                ) : filteredBulkLocations.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[hsl(var(--border))] p-6 text-center text-xs text-[hsl(var(--muted-foreground))]">
+                    ไม่พบสถานที่ที่ตรงกับคำค้นหา
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 max-h-56 overflow-y-auto p-1">
+                    {filteredBulkLocations.map((loc) => {
+                      const isChecked = bulkSelectedLocationIds.has(loc.id)
+                      return (
+                        <div
+                          key={loc.id}
+                          onClick={() => toggleLocationSelection(loc.id)}
+                          className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-2.5 transition-all ${
+                            isChecked
+                              ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 ring-1 ring-[hsl(var(--primary))]'
+                              : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:border-[hsl(var(--primary))]/40 hover:bg-[hsl(var(--accent))]'
+                          }`}
+                        >
+                          <div
+                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                              isChecked
+                                ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-white'
+                                : 'border-[hsl(var(--border))] bg-[hsl(var(--card))]'
+                            }`}
+                          >
+                            {isChecked && <Check className="h-3 w-3 stroke-[3]" />}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <h4 className="truncate text-xs font-bold text-[hsl(var(--foreground))]">
+                              {loc.name}
+                            </h4>
+                            {loc.building && (
+                              <p className="truncate text-[11px] font-semibold text-[hsl(var(--primary))]">
+                                🏢 {loc.building}
+                              </p>
+                            )}
+                            {loc.route_name && (
+                              <p className="truncate text-[10px] text-[hsl(var(--muted-foreground))]">
+                                เส้นทาง: {loc.route_name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Shared Options */}
+              <div className="mt-4 space-y-3 border-t border-[hsl(var(--border))] pt-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                    คำอธิบาย / จุดนัดรับ (Description)
+                    คำอธิบายเพิ่มเติม / จุดนัดรับ (Description - ใช้ร่วมกันทุกจุด)
                   </label>
                   <input
                     type="text"
-                    placeholder="เช่น ส่งที่เคาน์เตอร์ล็อบบี้ส่วนกลาง"
-                    value={bulkForm.description}
-                    onChange={(e) => setBulkForm({ ...bulkForm, description: e.target.value })}
+                    placeholder="เช่น จัดส่งที่เคาน์เตอร์ล็อบบี้ส่วนกลาง"
+                    value={bulkDescription}
+                    onChange={(e) => setBulkDescription(e.target.value)}
                     className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
                   />
                 </div>
@@ -859,32 +918,51 @@ export default function DeliveryPage() {
                 <div className="flex items-center gap-2 pt-1">
                   <input
                     type="checkbox"
-                    id="bulk_is_active"
-                    checked={bulkForm.is_active}
-                    onChange={(e) => setBulkForm({ ...bulkForm, is_active: e.target.checked })}
+                    id="bulk_matrix_active"
+                    checked={bulkIsActive}
+                    onChange={(e) => setBulkIsActive(e.target.checked)}
                     className="h-4 w-4 rounded text-[hsl(var(--primary))]"
                   />
-                  <label htmlFor="bulk_is_active" className="text-xs font-medium text-[hsl(var(--foreground))]">
-                    เปิดรับออเดอร์สำหรับทุกวันที่เลือก (Active)
+                  <label htmlFor="bulk_matrix_active" className="text-xs font-medium text-[hsl(var(--foreground))]">
+                    เปิดรับออเดอร์สำหรับทุกรอบที่สร้าง (Active)
                   </label>
                 </div>
+              </div>
 
-                <div className="mt-6 flex items-center justify-end gap-3 border-t border-[hsl(var(--border))] pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setIsBulkModalOpen(false)}
-                    className="rounded-xl border border-[hsl(var(--border))] px-4 py-2 text-xs font-semibold text-[hsl(var(--foreground))]"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90"
-                  >
-                    ตรวจสอบและนำไปใช้ ({selectedDates.size} วัน)
-                  </button>
-                </div>
-              </form>
+              {/* Calculation Banner (Section 7) */}
+              <div className="mt-4 rounded-2xl bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 p-3.5 flex items-center justify-between text-xs text-[hsl(var(--primary))]">
+                <span className="font-semibold">
+                  {selectedDates.size} วัน × {bulkSelectedLocationIds.size} สถานที่
+                </span>
+                <span className="font-extrabold text-sm">
+                  = {selectedDates.size * bulkSelectedLocationIds.size} รอบจัดส่ง
+                </span>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3 border-t border-[hsl(var(--border))] pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkModalOpen(false)}
+                  className="rounded-xl border border-[hsl(var(--border))] px-4 py-2 text-xs font-semibold text-[hsl(var(--foreground))]"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkSelectedLocationIds.size === 0}
+                  onClick={() => {
+                    if (bulkSelectedLocationIds.size === 0) {
+                      setBulkFormError('กรุณาเลือกสถานที่อย่างน้อย 1 แห่ง')
+                      return
+                    }
+                    setBulkFormError('')
+                    setShowBulkConfirmModal(true)
+                  }}
+                  className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90 disabled:opacity-50"
+                >
+                  ตรวจสอบและนำไปใช้ ({selectedDates.size * bulkSelectedLocationIds.size} รอบ)
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
@@ -900,34 +978,56 @@ export default function DeliveryPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl text-center"
+              className="w-full max-w-lg rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl text-center"
             >
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]">
-                <CheckSquare className="h-7 w-7" />
+                <Sparkles className="h-7 w-7" />
               </div>
 
               <h2 className="text-lg font-bold text-[hsl(var(--foreground))]">ยืนยันการตั้งค่ารอบจัดส่ง</h2>
               <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
-                คุณกำลังจะบันทึกรอบจัดส่งสำหรับ {selectedDates.size} วันที่เลือก
+                คุณกำลังจะบันทึกรอบจัดส่งทั้งหมด {selectedDates.size * bulkSelectedLocationIds.size} รอบ
               </p>
 
               {/* Summary Card */}
-              <div className="my-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4 text-left space-y-2 text-xs">
+              <div className="my-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4 text-left space-y-3 text-xs">
                 <div>
-                  <strong className="text-[hsl(var(--muted-foreground))] block">สถานที่:</strong>
-                  <span className="font-bold text-[hsl(var(--foreground))] text-sm">{bulkForm.location_name}</span>
-                  {bulkForm.building && <span className="text-[hsl(var(--muted-foreground))]"> (ตึก: {bulkForm.building})</span>}
+                  <strong className="text-[hsl(var(--muted-foreground))] block mb-1">
+                    วันที่จัดส่ง ({selectedDates.size} วัน):
+                  </strong>
+                  <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                    {selectedDatesList.map((d) => (
+                      <span key={d} className="rounded bg-[hsl(var(--muted))] px-2 py-0.5 text-[11px] font-semibold">
+                        {formatDeliveryDateThai(d)}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                {bulkForm.description && (
+
+                <div>
+                  <strong className="text-[hsl(var(--muted-foreground))] block mb-1">
+                    สถานที่จัดส่ง ({bulkSelectedLocationIds.size} แห่ง):
+                  </strong>
+                  <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                    {bulkSelectedLocationsList.map((loc) => (
+                      <span key={loc.id} className="rounded bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] px-2 py-0.5 text-[11px] font-bold">
+                        📍 {loc.name} {loc.building ? `(${loc.building})` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {bulkDescription && (
                   <div>
                     <strong className="text-[hsl(var(--muted-foreground))] block">คำอธิบาย:</strong>
-                    <span className="text-[hsl(var(--foreground))]">{bulkForm.description}</span>
+                    <span className="text-[hsl(var(--foreground))]">{bulkDescription}</span>
                   </div>
                 )}
+
                 <div>
                   <strong className="text-[hsl(var(--muted-foreground))] block">สถานะ:</strong>
-                  <span className={bulkForm.is_active ? 'font-bold text-emerald-600' : 'font-bold text-rose-500'}>
-                    {bulkForm.is_active ? 'เปิดรับออเดอร์ (Active)' : 'ปิดชั่วคราว (Inactive)'}
+                  <span className={bulkIsActive ? 'font-bold text-emerald-600' : 'font-bold text-rose-500'}>
+                    {bulkIsActive ? 'เปิดรับออเดอร์ (Active)' : 'ปิดชั่วคราว (Inactive)'}
                   </span>
                 </div>
               </div>
@@ -942,17 +1042,17 @@ export default function DeliveryPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => bulkApplyMutation.mutate()}
-                  disabled={bulkApplyMutation.isPending}
+                  onClick={() => bulkMatrixMutation.mutate()}
+                  disabled={bulkMatrixMutation.isPending}
                   className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90"
                 >
-                  {bulkApplyMutation.isPending ? (
+                  {bulkMatrixMutation.isPending ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" /> กำลังบันทึก...
                     </>
                   ) : (
                     <>
-                      <Check className="h-4 w-4" /> ยืนยันและบันทึก
+                      <Check className="h-4 w-4" /> ยืนยันและบันทึก ({selectedDates.size * bulkSelectedLocationIds.size} รอบ)
                     </>
                   )}
                 </button>
@@ -1004,7 +1104,7 @@ export default function DeliveryPage() {
                     <button
                       onClick={() => {
                         setEditingSchedule(null)
-                        setScheduleForm({
+                        setSingleScheduleForm({
                           location_id: '',
                           location_name: '',
                           building: '',
@@ -1012,7 +1112,7 @@ export default function DeliveryPage() {
                           description: '',
                           is_active: true,
                         })
-                        setScheduleFormError('')
+                        setSingleScheduleFormError('')
                         setIsAddingLocationToSingleDate(true)
                       }}
                       className="flex items-center gap-1.5 rounded-xl bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[hsl(var(--primary))]/90"
@@ -1078,7 +1178,7 @@ export default function DeliveryPage() {
                           <button
                             onClick={() => {
                               setEditingSchedule(sch)
-                              setScheduleForm({
+                              setSingleScheduleForm({
                                 location_id: sch.location_id || '',
                                 location_name: sch.location_name,
                                 building: sch.building || '',
@@ -1086,7 +1186,7 @@ export default function DeliveryPage() {
                                 description: sch.description || '',
                                 is_active: sch.is_active,
                               })
-                              setScheduleFormError('')
+                              setSingleScheduleFormError('')
                               setIsAddingLocationToSingleDate(true)
                             }}
                             className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
@@ -1135,9 +1235,9 @@ export default function DeliveryPage() {
                         </button>
                       </div>
 
-                      {scheduleFormError && (
+                      {singleScheduleFormError && (
                         <div className="mb-3 rounded-xl bg-rose-50 p-2.5 text-xs text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
-                          {scheduleFormError}
+                          {singleScheduleFormError}
                         </div>
                       )}
 
@@ -1154,11 +1254,11 @@ export default function DeliveryPage() {
                               เลือกจากสถานที่ที่บันทึกไว้ (Presets)
                             </label>
                             <select
-                              value={scheduleForm.location_id}
+                              value={singleScheduleForm.location_id}
                               onChange={(e) => {
                                 const loc = locations.find((l) => l.id === e.target.value)
                                 if (loc) {
-                                  setScheduleForm((prev) => ({
+                                  setSingleScheduleForm((prev) => ({
                                     ...prev,
                                     location_id: loc.id,
                                     location_name: loc.name,
@@ -1167,7 +1267,7 @@ export default function DeliveryPage() {
                                     description: loc.description || prev.description,
                                   }))
                                 } else {
-                                  setScheduleForm((prev) => ({ ...prev, location_id: '' }))
+                                  setSingleScheduleForm((prev) => ({ ...prev, location_id: '' }))
                                 }
                               }}
                               className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
@@ -1190,8 +1290,8 @@ export default function DeliveryPage() {
                             <input
                               type="text"
                               placeholder="เช่น ABC Tower"
-                              value={scheduleForm.location_name}
-                              onChange={(e) => setScheduleForm({ ...scheduleForm, location_name: e.target.value })}
+                              value={singleScheduleForm.location_name}
+                              onChange={(e) => setSingleScheduleForm({ ...singleScheduleForm, location_name: e.target.value })}
                               required
                               className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
                             />
@@ -1203,8 +1303,8 @@ export default function DeliveryPage() {
                             <input
                               type="text"
                               placeholder="เช่น อาคาร A"
-                              value={scheduleForm.building}
-                              onChange={(e) => setScheduleForm({ ...scheduleForm, building: e.target.value })}
+                              value={singleScheduleForm.building}
+                              onChange={(e) => setSingleScheduleForm({ ...singleScheduleForm, building: e.target.value })}
                               className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
                             />
                           </div>
@@ -1217,8 +1317,8 @@ export default function DeliveryPage() {
                           <input
                             type="text"
                             placeholder="เช่น Route 1"
-                            value={scheduleForm.route_name}
-                            onChange={(e) => setScheduleForm({ ...scheduleForm, route_name: e.target.value })}
+                            value={singleScheduleForm.route_name}
+                            onChange={(e) => setSingleScheduleForm({ ...singleScheduleForm, route_name: e.target.value })}
                             className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
                           />
                         </div>
@@ -1230,8 +1330,8 @@ export default function DeliveryPage() {
                           <input
                             type="text"
                             placeholder="เช่น จัดส่งที่เคาน์เตอร์ล็อบบี้ชั้น 1"
-                            value={scheduleForm.description}
-                            onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
+                            value={singleScheduleForm.description}
+                            onChange={(e) => setSingleScheduleForm({ ...singleScheduleForm, description: e.target.value })}
                             className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
                           />
                         </div>
@@ -1240,8 +1340,8 @@ export default function DeliveryPage() {
                           <input
                             type="checkbox"
                             id="single_is_active"
-                            checked={scheduleForm.is_active}
-                            onChange={(e) => setScheduleForm({ ...scheduleForm, is_active: e.target.checked })}
+                            checked={singleScheduleForm.is_active}
+                            onChange={(e) => setSingleScheduleForm({ ...singleScheduleForm, is_active: e.target.checked })}
                             className="h-4 w-4 rounded text-[hsl(var(--primary))]"
                           />
                           <label htmlFor="single_is_active" className="text-xs font-medium text-[hsl(var(--foreground))]">
@@ -1432,7 +1532,7 @@ export default function DeliveryPage() {
                   onClick={() => setIsLocationModalOpen(false)}
                   className="rounded-lg p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]"
                 >
-                  <X className="h-5 w-5" />
+                  <XCircle className="h-5 w-5" />
                 </button>
               </div>
 
@@ -1509,7 +1609,7 @@ export default function DeliveryPage() {
                     id="location_active"
                     checked={locationForm.is_active}
                     onChange={(e) => setLocationForm({ ...locationForm, is_active: e.target.checked })}
-                    className="h-4 w-4 rounded text-[hsl(var(--primary))]"
+                    className="h-4 w-4 rounded text-[hsl(var(--primary))] focus:ring-[hsl(var(--ring))]"
                   />
                   <label htmlFor="location_active" className="text-sm font-medium text-[hsl(var(--foreground))]">
                     เปิดใช้งานสถานที่นี้ (Active)

@@ -280,6 +280,136 @@ export async function bulkCreateOrUpdateDeliverySchedules(
   }
 }
 
+export interface BulkMatrixResult {
+  totalSchedules: number
+  totalDates: number
+  totalLocations: number
+  createdCount: number
+  updatedCount: number
+  errors: { date: string; locationName: string; reason: string }[]
+}
+
+/**
+ * Bulk create or update delivery schedules for a matrix of (Dates × Existing Locations)
+ * Safely creates or updates without creating duplicates.
+ */
+export async function bulkCreateOrUpdateMultiDateLocationMatrix(
+  dates: string[],
+  locationIds: string[],
+  options: {
+    description?: string | null
+    is_active?: boolean
+  }
+): Promise<BulkMatrixResult> {
+  const cleanDates = Array.from(new Set(dates)).sort()
+  const cleanLocationIds = Array.from(new Set(locationIds))
+
+  if (cleanDates.length === 0) {
+    throw new Error('กรุณาเลือกวันที่อย่างน้อย 1 วัน')
+  }
+
+  if (cleanLocationIds.length === 0) {
+    throw new Error('กรุณาเลือกสถานที่จัดส่งอย่างน้อย 1 แห่ง')
+  }
+
+  // Validate all dates are strictly in future
+  const { isStrictlyFutureDate } = await import('@/lib/delivery-utils')
+  for (const d of cleanDates) {
+    if (!isStrictlyFutureDate(d)) {
+      throw new Error(`วันที่ ${d} ไม่ใช่วันในอนาคต (ต้องเป็นวันหลังจากวันนี้เป็นต้นไป)`)
+    }
+  }
+
+  // Fetch the selected existing locations
+  const { data: targetLocations = [], error: locError } = await supabase
+    .from('delivery_locations')
+    .select('*')
+    .in('id', cleanLocationIds)
+
+  if (locError) throw locError
+  if (!targetLocations || targetLocations.length === 0) {
+    throw new Error('ไม่พบข้อมูลสถานที่ที่เลือกในระบบ')
+  }
+
+  // Fetch existing schedules on these dates
+  const { data: existingSchedules = [], error: fetchError } = await supabase
+    .from('delivery_schedules')
+    .select('*')
+    .in('delivery_date', cleanDates)
+
+  if (fetchError) throw fetchError
+  const schedulesList = (existingSchedules || []) as DeliverySchedule[]
+
+  let createdCount = 0
+  let updatedCount = 0
+  const errors: { date: string; locationName: string; reason: string }[] = []
+
+  for (const dateStr of cleanDates) {
+    for (const loc of targetLocations as DeliveryLocation[]) {
+      try {
+        const existing = schedulesList.find((s) => {
+          const sameDate = s.delivery_date === dateStr
+          const sameLocId = s.location_id === loc.id
+          const sameLocName = s.location_name.toLowerCase().trim() === loc.name.toLowerCase().trim()
+          return sameDate && (sameLocId || sameLocName)
+        })
+
+        if (existing) {
+          // Update existing schedule row
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: updErr } = await (supabase as any)
+            .from('delivery_schedules')
+            .update({
+              location_id: loc.id,
+              location_name: loc.name,
+              building: loc.building || null,
+              route_name: loc.route_name || null,
+              description: options.description?.trim() || loc.description || null,
+              is_active: options.is_active ?? true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id)
+
+          if (updErr) throw updErr
+          updatedCount++
+        } else {
+          // Insert new schedule row
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: insErr } = await (supabase as any)
+            .from('delivery_schedules')
+            .insert({
+              delivery_date: dateStr,
+              location_id: loc.id,
+              location_name: loc.name,
+              building: loc.building || null,
+              route_name: loc.route_name || null,
+              description: options.description?.trim() || loc.description || null,
+              is_active: options.is_active ?? true,
+            })
+
+          if (insErr) throw insErr
+          createdCount++
+        }
+      } catch (err: any) {
+        errors.push({
+          date: dateStr,
+          locationName: loc.name,
+          reason: err.message || 'บันทึกไม่สำเร็จ',
+        })
+      }
+    }
+  }
+
+  return {
+    totalSchedules: createdCount + updatedCount,
+    totalDates: cleanDates.length,
+    totalLocations: targetLocations.length,
+    createdCount,
+    updatedCount,
+    errors,
+  }
+}
+
 /**
  * Bulk toggle active/inactive for all schedules on given dates
  */

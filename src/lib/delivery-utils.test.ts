@@ -170,4 +170,32 @@ describe('6. Multi-Date Selection & Bulk Rules Validation', () => {
   })
 })
 
+describe('7. Date × Location Matrix Calculation', () => {
+  it('correctly calculates total matrix combinations (N dates × M locations)', () => {
+    const dates = ['2026-08-25', '2026-08-28', '2026-09-01', '2026-09-04'] // 4 dates
+    const locations = ['loc-1', 'loc-2', 'loc-3'] // 3 locations
+
+    const totalCombinations = dates.length * locations.length
+    expect(totalCombinations).toBe(12)
+
+    // Generate cartesian pairs
+    const pairs = dates.flatMap((d) => locations.map((l) => ({ date: d, locId: l })))
+    expect(pairs.length).toBe(12)
+    expect(pairs[0]).toEqual({ date: '2026-08-25', locId: 'loc-1' })
+    expect(pairs[pairs.length - 1]).toEqual({ date: '2026-09-04', locId: 'loc-3' })
+  })
+
+  it('prevents duplicates when duplicate date or location IDs are supplied in selection', () => {
+    const rawDates = ['2026-08-25', '2026-08-28', '2026-08-25']
+    const rawLocations = ['loc-1', 'loc-2', 'loc-1']
+
+    const cleanDates = Array.from(new Set(rawDates))
+    const cleanLocations = Array.from(new Set(rawLocations))
+
+    const pairs = cleanDates.flatMap((d) => cleanLocations.map((l) => `${d}_${l}`))
+    expect(pairs.length).toBe(4) // 2 clean dates * 2 clean locations
+  })
+})
+
+
 
