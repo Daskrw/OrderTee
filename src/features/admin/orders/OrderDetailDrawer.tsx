@@ -100,10 +100,12 @@ export function OrderDetailDrawer({ order, onClose }: OrderDetailDrawerProps) {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">ข้อมูลลูกค้าและการจัดส่ง</h3>
               <Badge variant="outline" className="uppercase text-[10px]">
-                {order.order_type === 'pickup' && 'รับที่ร้าน'}
-                {order.order_type === 'delivery' && 'จัดส่ง (เดิม)'}
-                {order.order_type === 'preorder_route' && 'จัดส่งตามรอบ'}
-                {order.order_type === 'preorder_nearby' && 'จัดส่งพื้นที่ใกล้เคียง'}
+                {order.order_type === 'pickup' && 'รับสินค้าที่ร้าน (Pickup)'}
+                {order.order_type === 'scheduled_route' && 'จัดส่งตามรอบ (Scheduled Route)'}
+                {order.order_type === 'immediate_local' && 'จัดส่งด่วนใกล้เคียง (Immediate Local)'}
+                {order.order_type === 'delivery' && 'จัดส่ง (Delivery)'}
+                {order.order_type === 'preorder_route' && 'จัดส่งตามรอบ (เดิม)'}
+                {order.order_type === 'preorder_nearby' && 'จัดส่งใกล้เคียง (เดิม)'}
               </Badge>
             </div>
             <div className="space-y-2 text-sm">
@@ -115,17 +117,57 @@ export function OrderDetailDrawer({ order, onClose }: OrderDetailDrawerProps) {
                 <Phone className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
                 {order.customer_phone}
               </div>
-              {order.delivery_date && (
-                <div className="flex items-start gap-2 text-[hsl(var(--foreground))] mt-2">
-                  <span className="text-[hsl(var(--muted-foreground))] h-4 w-4 flex items-center justify-center font-bold">📅</span>
-                  <span className="flex-1 font-medium">{new Date(order.delivery_date).toLocaleString('th-TH')}</span>
+
+              {/* Scheduled Route Delivery Details */}
+              {(order.order_type === 'scheduled_route' || order.scheduled_delivery_date) && (
+                <div className="mt-2 rounded-xl bg-[hsl(var(--primary))]/5 border border-[hsl(var(--primary))]/20 p-3 space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[hsl(var(--primary))]">
+                    <span>📅 วันที่จัดส่ง:</span>
+                    <span>{order.scheduled_delivery_date || order.delivery_date}</span>
+                  </div>
+                  {order.scheduled_delivery_location_name && (
+                    <div className="text-xs text-[hsl(var(--foreground))]">
+                      <strong>สถานที่/จุดส่ง:</strong> {order.scheduled_delivery_location_name}
+                      {order.scheduled_delivery_building && ` (ตึก/อาคาร: ${order.scheduled_delivery_building})`}
+                    </div>
+                  )}
+                  {order.scheduled_delivery_route && (
+                    <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                      <strong>เส้นทาง:</strong> {order.scheduled_delivery_route}
+                    </div>
+                  )}
+                  {order.delivery_address && (
+                    <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                      <strong>รายละเอียดเพิ่มเติม:</strong> {order.delivery_address}
+                    </div>
+                  )}
                 </div>
               )}
-              {order.delivery_address && (
+
+              {/* Immediate Local Delivery Address */}
+              {order.order_type === 'immediate_local' && order.delivery_address && (
                 <div className="flex items-start gap-2 text-[hsl(var(--foreground))] mt-2">
                   <MapPin className="h-4 w-4 text-[hsl(var(--muted-foreground))] mt-0.5" />
-                  <span className="flex-1">{order.delivery_address}</span>
+                  <span className="flex-1"><strong>ที่อยู่จัดส่ง:</strong> {order.delivery_address}</span>
                 </div>
+              )}
+
+              {/* Other delivery types with address/date */}
+              {order.order_type !== 'scheduled_route' && order.order_type !== 'immediate_local' && order.order_type !== 'pickup' && (
+                <>
+                  {order.delivery_date && (
+                    <div className="flex items-start gap-2 text-[hsl(var(--foreground))] mt-2">
+                      <span className="text-[hsl(var(--muted-foreground))] h-4 w-4 flex items-center justify-center font-bold">📅</span>
+                      <span className="flex-1 font-medium">{new Date(order.delivery_date).toLocaleString('th-TH')}</span>
+                    </div>
+                  )}
+                  {order.delivery_address && (
+                    <div className="flex items-start gap-2 text-[hsl(var(--foreground))] mt-2">
+                      <MapPin className="h-4 w-4 text-[hsl(var(--muted-foreground))] mt-0.5" />
+                      <span className="flex-1">{order.delivery_address}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
             {order.notes && (

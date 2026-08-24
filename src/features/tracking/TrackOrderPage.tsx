@@ -185,6 +185,76 @@ export default function TrackOrderPage() {
         </motion.div>
       )}
 
+      {/* Delivery Information Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="mb-8 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm"
+      >
+        <h2 className="mb-3 text-lg font-bold text-[hsl(var(--foreground))]">รูปแบบการจัดส่ง</h2>
+        
+        {order.order_type === 'pickup' && (
+          <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-4">
+            <p className="font-semibold text-[hsl(var(--foreground))]">รับสินค้าที่ร้าน (Pickup at Store)</p>
+            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+              เปิดรับสินค้าที่ร้านช่วงเวลา 19:00 - 22:00 น.
+            </p>
+          </div>
+        )}
+
+        {(order.order_type === 'scheduled_route' || order.scheduled_delivery_date) && (
+          <div className="rounded-xl bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[hsl(var(--primary))]">จัดส่งตามรอบเส้นทาง (Scheduled Route Delivery)</span>
+              <span className="text-xs font-semibold rounded-full bg-[hsl(var(--primary))]/20 px-2.5 py-0.5 text-[hsl(var(--primary))]">
+                {order.scheduled_delivery_date || order.delivery_date}
+              </span>
+            </div>
+            {order.scheduled_delivery_location_name && (
+              <p className="text-sm font-medium text-[hsl(var(--foreground))]">
+                📍 จุดส่ง: {order.scheduled_delivery_location_name}
+                {order.scheduled_delivery_building && ` (อาคาร: ${order.scheduled_delivery_building})`}
+              </p>
+            )}
+            {order.scheduled_delivery_route && (
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                เส้นทาง: {order.scheduled_delivery_route}
+              </p>
+            )}
+            {order.delivery_address && (
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                รายละเอียดจุดนัดรับ: {order.delivery_address}
+              </p>
+            )}
+            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 pt-1">
+              * คำสั่งซื้อของคุณจะจัดส่งภายในวันที่เลือก
+            </p>
+          </div>
+        )}
+
+        {order.order_type === 'immediate_local' && (
+          <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 space-y-1.5">
+            <p className="font-semibold text-[hsl(var(--foreground))]">จัดส่งด่วนพื้นที่ใกล้เคียง (Immediate Local Delivery)</p>
+            {order.delivery_address && (
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                📍 ที่อยู่จัดส่ง: <span className="text-[hsl(var(--foreground))]">{order.delivery_address}</span>
+              </p>
+            )}
+            <p className="text-xs text-blue-600 dark:text-blue-400">
+              จัดส่งในวันเดียวกัน (รอบ 19:00 - 22:00 น.)
+            </p>
+          </div>
+        )}
+
+        {order.order_type !== 'pickup' && order.order_type !== 'scheduled_route' && order.order_type !== 'immediate_local' && order.delivery_address && (
+          <div className="rounded-xl bg-[hsl(var(--muted))]/50 p-4">
+            <p className="font-semibold text-[hsl(var(--foreground))]">ที่อยู่จัดส่ง</p>
+            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">{order.delivery_address}</p>
+          </div>
+        )}
+      </motion.div>
+
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}

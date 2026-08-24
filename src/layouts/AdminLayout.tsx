@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Receipt, Package, Tags, Layers, Settings, Globe, LogOut } from 'lucide-react'
+import { LayoutDashboard, Receipt, Package, Tags, Layers, Settings, Globe, LogOut, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
 
@@ -9,6 +9,7 @@ const NAVIGATION = [
   { name: 'สินค้า', href: '/admin/products', icon: Package },
   { name: 'หมวดหมู่', href: '/admin/categories', icon: Tags },
   { name: 'ตัวเลือกเสริม', href: '/admin/addons', icon: Layers },
+  { name: 'การจัดส่ง', href: '/admin/delivery', icon: Truck },
   { name: 'หน้าเว็บไซต์', href: '/admin/website', icon: Globe },
   { name: 'ตั้งค่าร้าน', href: '/admin/settings', icon: Settings },
 ]

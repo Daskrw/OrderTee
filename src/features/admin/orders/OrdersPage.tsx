@@ -135,8 +135,13 @@ export default function OrdersPage() {
                       <div className="text-xs text-[hsl(var(--muted-foreground))]">{order.customer_phone}</div>
                     </td>
                     <td className="px-5 py-4">
-                      <Badge variant="outline" className="uppercase text-[10px]">
-                        {order.order_type}
+                      <Badge variant="outline" className="text-[10px]">
+                        {order.order_type === 'pickup' && 'รับที่ร้าน'}
+                        {order.order_type === 'scheduled_route' && 'จัดส่งตามรอบ'}
+                        {order.order_type === 'immediate_local' && 'จัดส่งด่วน'}
+                        {order.order_type === 'delivery' && 'จัดส่ง'}
+                        {order.order_type === 'preorder_route' && 'จัดส่งตามรอบ'}
+                        {order.order_type === 'preorder_nearby' && 'จัดส่งใกล้เคียง'}
                       </Badge>
                     </td>
                     <td className="px-5 py-4 font-medium text-[hsl(var(--foreground))]">

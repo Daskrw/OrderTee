@@ -11,6 +11,7 @@ import ProductsPage from '@/features/admin/products/ProductsPage'
 import ProductFormPage from '@/features/admin/products/ProductFormPage'
 import CategoriesPage from '@/features/admin/categories/CategoriesPage'
 import AddonGroupsPage from '@/features/admin/addons/AddonGroupsPage'
+import DeliveryPage from '@/features/admin/delivery/DeliveryPage'
 import WebsitePage from '@/features/admin/website/WebsitePage'
 import SettingsPage from '@/features/admin/settings/SettingsPage'
 
@@ -88,6 +89,7 @@ const router = createBrowserRouter([
       { path: 'products/:id', element: <ProductFormPage /> },
       { path: 'categories', element: <CategoriesPage /> },
       { path: 'addons', element: <AddonGroupsPage /> },
+      { path: 'delivery', element: <DeliveryPage /> },
       { path: 'website', element: <WebsitePage /> },
       { path: 'settings', element: <SettingsPage /> },
     ],

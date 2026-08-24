@@ -1,5 +1,11 @@
 import { supabase } from '@/lib/supabase'
 import { generateTrackingToken } from '@/lib/utils'
+import {
+  isPickupAllowed,
+  isImmediateDeliveryAllowed,
+  isStrictlyFutureDate,
+  DELIVERY_ERROR_MESSAGES,
+} from '@/lib/delivery-utils'
 import type { Order, OrderType } from '@/types/database'
 import type { CartItem } from '@/stores/cart-store'
 
@@ -10,12 +16,41 @@ export interface CreateOrderInput {
   deliveryAddress?: string | null
   deliveryDate?: string | null
   deliveryFee: number
+  scheduledDeliveryDate?: string | null
+  scheduledDeliveryLocationId?: string | null
+  scheduledDeliveryLocationName?: string | null
+  scheduledDeliveryBuilding?: string | null
+  scheduledDeliveryRoute?: string | null
   notes?: string | null
   cartItems: CartItem[]
   total: number
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<Order> {
+  // Client-side rule verification (Backend trigger also enforces this as final authority)
+  if (input.orderType === 'pickup') {
+    if (!isPickupAllowed()) {
+      throw new Error(DELIVERY_ERROR_MESSAGES.PICKUP_UNAVAILABLE)
+    }
+  } else if (input.orderType === 'immediate_local') {
+    if (!isImmediateDeliveryAllowed()) {
+      throw new Error(DELIVERY_ERROR_MESSAGES.IMMEDIATE_UNAVAILABLE)
+    }
+    if (!input.deliveryAddress?.trim()) {
+      throw new Error(DELIVERY_ERROR_MESSAGES.IMMEDIATE_ADDRESS_REQUIRED)
+    }
+  } else if (input.orderType === 'scheduled_route') {
+    if (!input.scheduledDeliveryDate) {
+      throw new Error(DELIVERY_ERROR_MESSAGES.SCHEDULED_DATE_REQUIRED)
+    }
+    if (!isStrictlyFutureDate(input.scheduledDeliveryDate)) {
+      throw new Error(DELIVERY_ERROR_MESSAGES.SCHEDULED_DATE_NOT_FUTURE)
+    }
+    if (!input.scheduledDeliveryLocationName?.trim()) {
+      throw new Error(DELIVERY_ERROR_MESSAGES.SCHEDULED_LOCATION_REQUIRED)
+    }
+  }
+
   const trackingToken = generateTrackingToken()
 
   // 1. Insert order — triggers auto-generate order_number and queue_number
@@ -23,13 +58,18 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     order_number: 'pending',   // overridden by trigger
     queue_number: 0,           // overridden by trigger
     tracking_token: trackingToken,
-    customer_name: input.customerName,
-    customer_phone: input.customerPhone,
+    customer_name: input.customerName.trim(),
+    customer_phone: input.customerPhone.trim(),
     order_type: input.orderType,
     delivery_address: input.deliveryAddress ?? null,
-    delivery_date: input.deliveryDate ?? null,
+    delivery_date: input.deliveryDate ?? input.scheduledDeliveryDate ?? null,
     delivery_fee: input.deliveryFee,
-    notes: input.notes ?? null,
+    scheduled_delivery_date: input.scheduledDeliveryDate ?? null,
+    scheduled_delivery_location_id: input.scheduledDeliveryLocationId ?? null,
+    scheduled_delivery_location_name: input.scheduledDeliveryLocationName ?? null,
+    scheduled_delivery_building: input.scheduledDeliveryBuilding ?? null,
+    scheduled_delivery_route: input.scheduledDeliveryRoute ?? null,
+    notes: input.notes?.trim() ?? null,
     status: 'pending' as const,
     total: input.total,
   }

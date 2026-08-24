@@ -20,11 +20,19 @@ const PROJECT_REF = SUPABASE_URL?.replace('https://', '').split('.')[0]
 
 const migrationsDir = join(__dirname, '../supabase/migrations')
 
-// Read all SQL files
-const schema    = readFileSync(join(migrationsDir, '001_schema.sql'), 'utf-8')
-const policies  = readFileSync(join(migrationsDir, '002_policies.sql'), 'utf-8')
-const functions = readFileSync(join(migrationsDir, '003_functions.sql'), 'utf-8')
-const seed      = readFileSync(join(__dirname, '../supabase/seed.sql'), 'utf-8')
+// Read all SQL files dynamically
+import { readdirSync } from 'fs'
+const migrationFiles = readdirSync(migrationsDir)
+  .filter(file => file.endsWith('.sql'))
+  .sort()
+
+const migrationsContent = migrationFiles
+  .map(file => {
+    return `-- Migration: ${file}\n` + readFileSync(join(migrationsDir, file), 'utf-8')
+  })
+  .join('\n\n')
+
+const seed = readFileSync(join(__dirname, '../supabase/seed.sql'), 'utf-8')
 
 const FULL_SQL = `-- ============================================================
 -- OrderTee — Full Database Setup
@@ -32,11 +40,7 @@ const FULL_SQL = `-- ===========================================================
 -- Run this in: https://supabase.com/dashboard/project/${PROJECT_REF}/sql
 -- ============================================================
 
-${schema}
-
-${policies}
-
-${functions}
+${migrationsContent}
 
 ${seed}
 `

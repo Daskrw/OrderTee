@@ -2,7 +2,39 @@
 // These are manually maintained — update when schema changes
 
 export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled'
-export type OrderType = 'pickup' | 'delivery' | 'preorder_route' | 'preorder_nearby'
+export type OrderType = 
+  | 'pickup' 
+  | 'scheduled_route' 
+  | 'immediate_local' 
+  | 'delivery' 
+  | 'preorder_route' 
+  | 'preorder_nearby'
+
+export interface DeliveryLocation {
+  id: string
+  name: string
+  building: string | null
+  route_name: string | null
+  description: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DeliverySchedule {
+  id: string
+  delivery_date: string
+  location_id: string | null
+  location_name: string
+  building: string | null
+  route_name: string | null
+  description: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  // Optional joined location
+  location?: DeliveryLocation
+}
 
 export interface Category {
   id: string
@@ -65,6 +97,11 @@ export interface Order {
   delivery_address: string | null
   delivery_date: string | null
   delivery_fee: number
+  scheduled_delivery_date: string | null
+  scheduled_delivery_location_id: string | null
+  scheduled_delivery_location_name: string | null
+  scheduled_delivery_building: string | null
+  scheduled_delivery_route: string | null
   notes: string | null
   status: OrderStatus
   total: number
@@ -191,6 +228,16 @@ export interface Database {
         Row: Promotion
         Insert: Omit<Promotion, 'id' | 'created_at'> & { id?: string; created_at?: string }
         Update: Partial<Omit<Promotion, 'id'>>
+      }
+      delivery_locations: {
+        Row: DeliveryLocation
+        Insert: Omit<DeliveryLocation, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }
+        Update: Partial<Omit<DeliveryLocation, 'id'>>
+      }
+      delivery_schedules: {
+        Row: DeliverySchedule
+        Insert: Omit<DeliverySchedule, 'id' | 'created_at' | 'updated_at' | 'location'> & { id?: string; created_at?: string; updated_at?: string }
+        Update: Partial<Omit<DeliverySchedule, 'id' | 'location'>>
       }
     }
   }
