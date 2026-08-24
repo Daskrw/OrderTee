@@ -56,7 +56,7 @@ export default function LandingPage() {
           {storeDescription || 'สั่งอาหารออนไลน์ ทำได้ง่ายๆ'}
         </motion.p>
 
-        {/* Two cards */}
+        {/* Action cards */}
         <div className="grid w-full max-w-lg gap-4 sm:grid-cols-2">
           {/* Browse Products */}
           <motion.button
@@ -66,43 +66,53 @@ export default function LandingPage() {
             whileHover={{ scale: 1.02, y: -2 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => navigate('/order')}
-            className="group relative flex flex-col items-center gap-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-8 shadow-sm transition-shadow hover:shadow-lg hover:shadow-[hsl(var(--primary))]/10"
+            className="group relative flex flex-col items-center gap-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-sm transition-shadow hover:shadow-lg hover:shadow-[hsl(var(--primary))]/10"
           >
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[hsl(var(--primary))]/10 transition-colors group-hover:bg-[hsl(var(--primary))]/20">
-              <ShoppingBag className="h-7 w-7 text-[hsl(var(--primary))]" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[hsl(var(--primary))]/10 transition-colors group-hover:bg-[hsl(var(--primary))]/20">
+              <ShoppingBag className="h-6 w-6 text-[hsl(var(--primary))]" />
             </div>
             <div className="text-center">
-              <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
-                เลือกซื้อสินค้า
+              <h2 className="text-base font-bold text-[hsl(var(--foreground))]">
+                สั่งซื้อสินค้าออนไลน์
               </h2>
-              <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+              <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">
                 ดูเมนูและสั่งอาหาร
               </p>
             </div>
           </motion.button>
 
-          {/* Admin Login */}
+          {/* Activities / Campaigns */}
           <motion.button
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.5 }}
             whileHover={{ scale: 1.02, y: -2 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/admin/login')}
-            className="group relative flex flex-col items-center gap-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-8 shadow-sm transition-shadow hover:shadow-lg"
+            onClick={() => navigate('/activities')}
+            className="group relative flex flex-col items-center gap-4 rounded-2xl border border-amber-500/30 bg-gradient-to-b from-amber-500/5 to-transparent p-6 shadow-sm transition-shadow hover:shadow-lg hover:shadow-amber-500/10"
           >
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[hsl(var(--secondary))] transition-colors group-hover:bg-[hsl(var(--accent))]">
-              <Shield className="h-7 w-7 text-[hsl(var(--muted-foreground))]" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 transition-colors group-hover:bg-amber-500/20">
+              <span className="text-2xl">🎉</span>
             </div>
             <div className="text-center">
-              <h2 className="text-lg font-semibold text-[hsl(var(--foreground))]">
-                เข้าสู่ระบบผู้ดูแล
+              <h2 className="text-base font-bold text-[hsl(var(--foreground))] flex items-center justify-center gap-1.5">
+                กิจกรรมสะสมรางวัล <span className="rounded-full bg-amber-500 text-white text-[10px] px-1.5 py-0.2">HOT</span>
               </h2>
-              <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
-                จัดการร้านค้าของคุณ
+              <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">
+                ส่งรูปสะสมครบ 5 ไอเทม รับโปรพิเศษ
               </p>
             </div>
           </motion.button>
+        </div>
+
+        {/* Admin Link */}
+        <div className="mt-6">
+          <button
+            onClick={() => navigate('/admin/login')}
+            className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] flex items-center gap-1.5 transition-colors"
+          >
+            <Shield className="h-3.5 w-3.5" /> เข้าสู่ระบบผู้ดูแลร้านค้า
+          </button>
         </div>
       </motion.div>
 

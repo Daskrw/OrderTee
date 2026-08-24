@@ -22,6 +22,7 @@ const CheckoutPage = lazy(() => import('@/features/ordering/CheckoutPage'))
 const OrderSuccessPage = lazy(() => import('@/features/ordering/OrderSuccessPage'))
 const TrackOrderPage = lazy(() => import('@/features/tracking/TrackOrderPage'))
 const AdminLoginPage = lazy(() => import('@/features/auth/AdminLoginPage'))
+const ActivitiesPage = lazy(() => import('@/features/activities/ActivitiesPage'))
 
 function PageLoader() {
   return (
@@ -57,6 +58,10 @@ const router = createBrowserRouter([
       {
         path: '/order/success/:id',
         element: <SuspenseWrapper><OrderSuccessPage /></SuspenseWrapper>,
+      },
+      {
+        path: '/activities',
+        element: <SuspenseWrapper><ActivitiesPage /></SuspenseWrapper>,
       },
     ],
   },

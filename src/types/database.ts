@@ -178,6 +178,43 @@ export interface Promotion {
   created_at: string
 }
 
+export type SubmissionStatus = 'pending' | 'approved' | 'rejected'
+
+export interface Activity {
+  id: string
+  title: string
+  description: string | null
+  instructions: string | null
+  cover_image: string | null
+  required_items: number
+  reward_description: string
+  contact_info: string | null
+  start_date: string | null
+  end_date: string | null
+  max_photos_per_submission: number
+  is_active: boolean
+  show_gallery: boolean
+  show_leaderboard: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ActivitySubmission {
+  id: string
+  activity_id: string
+  customer_name: string
+  customer_phone: string
+  images: string[]
+  item_tag: string | null
+  status: SubmissionStatus
+  admin_note: string | null
+  rejection_reason: string | null
+  reviewed_at: string | null
+  created_at: string
+  // Optional joined field
+  activity?: Activity
+}
+
 // Supabase Database type for the typed client
 export interface Database {
   public: {

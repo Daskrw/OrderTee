@@ -33,10 +33,26 @@ export function CustomerLayout() {
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-          <Link to="/" className="text-xl font-extrabold text-[hsl(var(--foreground))]" title="กลับสู่หน้าหลัก">
-            {settings?.store_name || 'OrderTee'}
-          </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-6">
+            <Link to="/" className="text-xl font-extrabold text-[hsl(var(--foreground))]" title="กลับสู่หน้าหลัก">
+              {settings?.store_name || 'OrderTee'}
+            </Link>
+            <nav className="hidden sm:flex items-center gap-4 text-xs font-bold">
+              <Link to="/order" className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors">
+                เมนูสั่งอาหาร
+              </Link>
+              <Link to="/activities" className="flex items-center gap-1 text-[hsl(var(--primary))] hover:opacity-80 transition-opacity">
+                <span>🎉 กิจกรรมสะสมรางวัล</span>
+              </Link>
+            </nav>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/activities"
+              className="sm:hidden text-xs font-bold text-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 px-2.5 py-1 rounded-lg"
+            >
+              🎉 กิจกรรม
+            </Link>
             <ThemeToggle />
           </div>
         </div>

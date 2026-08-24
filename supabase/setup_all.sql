@@ -728,11 +728,52 @@ WHERE p.category_id IN (
   SELECT id FROM categories WHERE name IN ('Hot Coffee', 'Iced Coffee')
 );
 
--- Assign sweetness and size to tea
 INSERT INTO product_addon_groups (product_id, addon_group_id)
 SELECT p.id, ag.id
 FROM products p
 CROSS JOIN addon_groups ag
-WHERE p.category_id = (SELECT id FROM categories WHERE name = 'Tea')
-  AND ag.name IN ('Sweetness', 'Size');
+WHERE p.category_id = (SELECT id FROM categories WHERE name = 'Tea');
 
+-- ============================================================
+-- Activities & Submissions
+-- ============================================================
+CREATE TABLE IF NOT EXISTS activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  description TEXT,
+  instructions TEXT,
+  cover_image TEXT,
+  required_items INTEGER NOT NULL DEFAULT 5,
+  reward_description TEXT NOT NULL DEFAULT 'รับส่วนลดพิเศษหรือของรางวัลจากทางร้าน',
+  contact_info TEXT DEFAULT 'ติดต่อร้านค้าได้ที่เบอร์ 061-608-0720 หรือ Line Official',
+  start_date DATE,
+  end_date DATE,
+  max_photos_per_submission INTEGER NOT NULL DEFAULT 10,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  show_gallery BOOLEAN NOT NULL DEFAULT true,
+  show_leaderboard BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS activity_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  activity_id UUID NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+  customer_name TEXT NOT NULL,
+  customer_phone TEXT NOT NULL,
+  images TEXT[] NOT NULL DEFAULT '{}',
+  item_tag TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  admin_note TEXT,
+  rejection_reason TEXT,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_submissions_activity ON activity_submissions(activity_id);
+CREATE INDEX IF NOT EXISTS idx_activity_submissions_phone ON activity_submissions(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_activity_submissions_status ON activity_submissions(status);
+
+ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_submissions ENABLE ROW LEVEL SECURITY;
+  AND ag.name IN ('Sweetness', 'Size');
