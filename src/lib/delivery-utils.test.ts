@@ -144,3 +144,30 @@ describe('5. Calendar Month Grid Calculation', () => {
   })
 })
 
+describe('6. Multi-Date Selection & Bulk Rules Validation', () => {
+  const baseDate = createBangkokTime(2026, 8, 24, 12, 0)
+
+  it('validates array of multiple dates where all must be strictly future', () => {
+    const validBatch = ['2026-08-25', '2026-08-28', '2026-09-01', '2026-09-04']
+    const allValid = validBatch.every((d) => isStrictlyFutureDate(d, baseDate))
+    expect(allValid).toBe(true)
+  })
+
+  it('rejects batch containing today or past dates', () => {
+    const invalidBatchWithToday = ['2026-08-24', '2026-08-25', '2026-08-28']
+    const allValidToday = invalidBatchWithToday.every((d) => isStrictlyFutureDate(d, baseDate))
+    expect(allValidToday).toBe(false)
+
+    const invalidBatchWithPast = ['2026-08-23', '2026-08-25']
+    const allValidPast = invalidBatchWithPast.every((d) => isStrictlyFutureDate(d, baseDate))
+    expect(allValidPast).toBe(false)
+  })
+
+  it('deduplicates dates properly in multi-date set', () => {
+    const rawDates = ['2026-08-25', '2026-08-28', '2026-08-25', '2026-09-01']
+    const unique = Array.from(new Set(rawDates)).sort()
+    expect(unique).toEqual(['2026-08-25', '2026-08-28', '2026-09-01'])
+  })
+})
+
+

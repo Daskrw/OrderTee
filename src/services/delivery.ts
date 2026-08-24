@@ -165,3 +165,154 @@ export async function deleteDeliverySchedule(id: string): Promise<void> {
 
   if (error) throw error
 }
+
+// ============================================================
+// Bulk Operations
+// ============================================================
+
+export interface BulkScheduleResult {
+  totalSuccess: number
+  createdCount: number
+  updatedCount: number
+  errors: { date: string; reason: string }[]
+}
+
+/**
+ * Bulk create or update delivery schedules across multiple dates
+ * Safe against duplicate records for same date + location.
+ */
+export async function bulkCreateOrUpdateDeliverySchedules(
+  dates: string[],
+  payload: {
+    location_id?: string | null
+    location_name: string
+    building?: string | null
+    route_name?: string | null
+    description?: string | null
+    is_active?: boolean
+  }
+): Promise<BulkScheduleResult> {
+  const cleanDates = Array.from(new Set(dates)).sort()
+  if (cleanDates.length === 0) {
+    throw new Error('กรุณาเลือกวันที่อย่างน้อย 1 วัน')
+  }
+
+  if (!payload.location_name?.trim()) {
+    throw new Error('กรุณาระบุชื่อสถานที่จัดส่ง')
+  }
+
+  // Validate all dates are strictly in future
+  const { isStrictlyFutureDate } = await import('@/lib/delivery-utils')
+  for (const d of cleanDates) {
+    if (!isStrictlyFutureDate(d)) {
+      throw new Error(`วันที่ ${d} ไม่ใช่วันในอนาคต (ต้องเป็นวันหลังจากวันนี้เป็นต้นไป)`)
+    }
+  }
+
+  // Fetch existing schedules on these dates
+  const { data: existingSchedules = [], error: fetchError } = await supabase
+    .from('delivery_schedules')
+    .select('*')
+    .in('delivery_date', cleanDates)
+
+  if (fetchError) throw fetchError
+
+  let createdCount = 0
+  let updatedCount = 0
+  const errors: { date: string; reason: string }[] = []
+
+  for (const dateStr of cleanDates) {
+    try {
+      const schedulesList = (existingSchedules || []) as DeliverySchedule[]
+      const existing: DeliverySchedule | undefined = schedulesList.find((s) => {
+        const sameDate = s.delivery_date === dateStr
+        const sameLocId = payload.location_id && s.location_id === payload.location_id
+        const sameLocName = s.location_name.toLowerCase().trim() === payload.location_name.toLowerCase().trim()
+        return sameDate && (sameLocId || sameLocName)
+      })
+
+      if (existing) {
+        // Update existing schedule
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updErr } = await (supabase as any)
+          .from('delivery_schedules')
+          .update({
+            location_id: payload.location_id || existing.location_id || null,
+            location_name: payload.location_name.trim(),
+            building: payload.building?.trim() || null,
+            route_name: payload.route_name?.trim() || null,
+            description: payload.description?.trim() || null,
+            is_active: payload.is_active ?? true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+
+        if (updErr) throw updErr
+        updatedCount++
+      } else {
+        // Insert new schedule
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: insErr } = await (supabase as any)
+          .from('delivery_schedules')
+          .insert({
+            delivery_date: dateStr,
+            location_id: payload.location_id || null,
+            location_name: payload.location_name.trim(),
+            building: payload.building?.trim() || null,
+            route_name: payload.route_name?.trim() || null,
+            description: payload.description?.trim() || null,
+            is_active: payload.is_active ?? true,
+          })
+
+        if (insErr) throw insErr
+        createdCount++
+      }
+    } catch (err: any) {
+      errors.push({ date: dateStr, reason: err.message || 'บันทึกไม่สำเร็จ' })
+    }
+  }
+
+  return {
+    totalSuccess: createdCount + updatedCount,
+    createdCount,
+    updatedCount,
+    errors,
+  }
+}
+
+/**
+ * Bulk toggle active/inactive for all schedules on given dates
+ */
+export async function bulkUpdateSchedulesStatus(dates: string[], isActive: boolean): Promise<number> {
+  if (dates.length === 0) return 0
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('delivery_schedules')
+    .update({
+      is_active: isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .in('delivery_date', dates)
+    .select('id')
+
+  if (error) throw error
+  return (data || []).length
+}
+
+/**
+ * Bulk delete schedules for multiple dates
+ */
+export async function bulkDeleteSchedulesByDates(dates: string[]): Promise<number> {
+  if (dates.length === 0) return 0
+
+  const { data, error } = await supabase
+    .from('delivery_schedules')
+    .delete()
+    .in('delivery_date', dates)
+    .select('id')
+
+  if (error) throw error
+  return (data || []).length
+}
+

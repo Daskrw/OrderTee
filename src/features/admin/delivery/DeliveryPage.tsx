@@ -11,14 +11,15 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  Info,
   ChevronLeft,
   ChevronRight,
-  Route,
   Search,
   Check,
   X,
   Layers,
+  CheckSquare,
+  Square,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   fetchDeliveryLocations,
@@ -29,6 +30,9 @@ import {
   createDeliverySchedule,
   updateDeliverySchedule,
   deleteDeliverySchedule,
+  bulkCreateOrUpdateDeliverySchedules,
+  bulkUpdateSchedulesStatus,
+  bulkDeleteSchedulesByDates,
 } from '@/services/delivery'
 import {
   getBangkokDateTime,
@@ -48,12 +52,15 @@ export default function DeliveryPage() {
   const [calYear, setCalYear] = useState(currentBkk.year)
   const [calMonth, setCalMonth] = useState(currentBkk.month) // 1 - 12
 
-  // Date Modal State (Opened when clicking a future date in calendar)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [isAddingLocationToDate, setIsAddingLocationToDate] = useState(false)
+  // Multi-date selection state (persist across month changes!)
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
+
+  // Single Date Modal State (to view/edit individual day)
+  const [singleDateModal, setSingleDateModal] = useState<string | null>(null)
+  const [isAddingLocationToSingleDate, setIsAddingLocationToSingleDate] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<DeliverySchedule | null>(null)
 
-  // Schedule Quick Form
+  // Single Date Quick Form
   const [scheduleForm, setScheduleForm] = useState({
     location_id: '',
     location_name: '',
@@ -63,6 +70,20 @@ export default function DeliveryPage() {
     is_active: true,
   })
   const [scheduleFormError, setScheduleFormError] = useState('')
+
+  // Bulk Configuration Modal State
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false)
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false)
+  const [bulkForm, setBulkForm] = useState({
+    location_id: '',
+    location_name: '',
+    building: '',
+    route_name: '',
+    description: '',
+    is_active: true,
+  })
+  const [bulkFormError, setBulkFormError] = useState('')
+  const [bulkSuccessMessage, setBulkSuccessMessage] = useState('')
 
   // Location Management Tab State
   const [locationSearch, setLocationSearch] = useState('')
@@ -83,7 +104,7 @@ export default function DeliveryPage() {
     queryFn: fetchDeliveryLocations,
   })
 
-  const { data: schedules = [], isLoading: isLoadingSchedules } = useQuery({
+  const { data: schedules = [] } = useQuery({
     queryKey: ['admin-delivery-schedules'],
     queryFn: fetchDeliverySchedules,
   })
@@ -104,11 +125,16 @@ export default function DeliveryPage() {
     return getCalendarMonthDays(calYear, calMonth)
   }, [calYear, calMonth])
 
-  // Schedules for currently clicked date
-  const selectedDateSchedules = useMemo(() => {
-    if (!selectedDate) return []
-    return schedulesByDate.get(selectedDate) || []
-  }, [selectedDate, schedulesByDate])
+  // Future selectable days in current visible month
+  const visibleFutureDays = useMemo(() => {
+    return calendarDays.filter((d) => d.isCurrentMonth && d.isFuture).map((d) => d.dateString)
+  }, [calendarDays])
+
+  // Single date schedules
+  const singleDateSchedules = useMemo(() => {
+    if (!singleDateModal) return []
+    return schedulesByDate.get(singleDateModal) || []
+  }, [singleDateModal, schedulesByDate])
 
   // Month navigation
   const prevMonth = () => {
@@ -134,14 +160,45 @@ export default function DeliveryPage() {
     setCalMonth(currentBkk.month)
   }
 
+  // Multi-date selection helpers
+  const toggleDateSelection = (dateStr: string, isFuture: boolean) => {
+    if (!isFuture) return
+    setSelectedDates((prev) => {
+      const next = new Set(prev)
+      if (next.has(dateStr)) {
+        next.delete(dateStr)
+      } else {
+        next.add(dateStr)
+      }
+      return next
+    })
+  }
+
+  const selectAllVisibleFutureDays = () => {
+    setSelectedDates((prev) => {
+      const next = new Set(prev)
+      visibleFutureDays.forEach((d) => next.add(d))
+      return next
+    })
+  }
+
+  const clearSelection = () => {
+    setSelectedDates(new Set())
+  }
+
+  // Sorted list of selected dates
+  const selectedDatesList = useMemo(() => {
+    return Array.from(selectedDates).sort()
+  }, [selectedDates])
+
   // ==========================================
-  // Schedule Mutations
+  // Single Schedule Mutations
   // ==========================================
-  const scheduleMutation = useMutation({
+  const singleScheduleMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedDate) throw new Error('กรุณาเลือกวันที่')
-      if (!isStrictlyFutureDate(selectedDate)) {
-        throw new Error('วันที่ต้องเป็นวันในอนาคตเท่านั้น (ไม่สามารถเลือกวันนี้หรือวันที่ผ่านมาแล้วได้)')
+      if (!singleDateModal) throw new Error('กรุณาเลือกวันที่')
+      if (!isStrictlyFutureDate(singleDateModal)) {
+        throw new Error('วันที่ต้องเป็นวันในอนาคตเท่านั้น')
       }
       if (!scheduleForm.location_name.trim()) {
         throw new Error('กรุณาระบุหรือเลือกสถานที่จัดส่ง')
@@ -150,12 +207,12 @@ export default function DeliveryPage() {
       if (editingSchedule) {
         return updateDeliverySchedule(editingSchedule.id, {
           ...scheduleForm,
-          delivery_date: selectedDate,
+          delivery_date: singleDateModal,
         })
       } else {
         return createDeliverySchedule({
           ...scheduleForm,
-          delivery_date: selectedDate,
+          delivery_date: singleDateModal,
         })
       }
     },
@@ -163,7 +220,7 @@ export default function DeliveryPage() {
       void queryClient.invalidateQueries({ queryKey: ['admin-delivery-schedules'] })
       void queryClient.invalidateQueries({ queryKey: ['delivery-schedules'] })
       void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
-      setIsAddingLocationToDate(false)
+      setIsAddingLocationToSingleDate(false)
       setEditingSchedule(null)
       setScheduleForm({
         location_id: '',
@@ -188,7 +245,7 @@ export default function DeliveryPage() {
       void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
     },
     onError: (err: any) => {
-      alert(err.message || 'เกิดข้อผิดพลาดในการลบรอบจัดส่ง')
+      alert(err.message || 'เกิดข้อผิดพลาดในการลบ')
     },
   })
 
@@ -202,12 +259,62 @@ export default function DeliveryPage() {
     }
   }
 
-  const handleDateClick = (dateStr: string, isFuture: boolean) => {
-    if (!isFuture) return
-    setSelectedDate(dateStr)
-    setIsAddingLocationToDate(false)
-    setEditingSchedule(null)
-    setScheduleForm({
+  // ==========================================
+  // Bulk Mutations
+  // ==========================================
+  const bulkApplyMutation = useMutation({
+    mutationFn: async () => {
+      if (selectedDatesList.length === 0) throw new Error('กรุณาเลือกวันที่')
+      if (!bulkForm.location_name.trim()) throw new Error('กรุณากรอกชื่อสถานที่')
+
+      return bulkCreateOrUpdateDeliverySchedules(selectedDatesList, bulkForm)
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-delivery-schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['delivery-schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
+
+      setBulkSuccessMessage(
+        `กำหนดรอบจัดส่งเรียบร้อยแล้วทั้งหมด ${result.totalSuccess} วัน (${result.createdCount} วันใหม่, ${result.updatedCount} วันที่มีอยู่แล้ว)`
+      )
+      setIsBulkModalOpen(false)
+      setShowBulkConfirmModal(false)
+      clearSelection()
+
+      setTimeout(() => setBulkSuccessMessage(''), 5000)
+    },
+    onError: (err: any) => {
+      setBulkFormError(err.message || 'เกิดข้อผิดพลาดในการบันทึกแบบกลุ่ม')
+    },
+  })
+
+  const bulkActivateMutation = useMutation({
+    mutationFn: (isActive: boolean) => bulkUpdateSchedulesStatus(selectedDatesList, isActive),
+    onSuccess: (count) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-delivery-schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
+      setBulkSuccessMessage(`อัปเดตสถานะรอบจัดส่งแล้ว ${count} รายการ`)
+      clearSelection()
+      setTimeout(() => setBulkSuccessMessage(''), 4000)
+    },
+    onError: (err: any) => alert(err.message || 'เกิดข้อผิดพลาด'),
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => bulkDeleteSchedulesByDates(selectedDatesList),
+    onSuccess: (count) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-delivery-schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['active-upcoming-schedules'] })
+      setBulkSuccessMessage(`ลบรอบจัดส่งแล้ว ${count} รายการ`)
+      clearSelection()
+      setTimeout(() => setBulkSuccessMessage(''), 4000)
+    },
+    onError: (err: any) => alert(err.message || 'เกิดข้อผิดพลาด'),
+  })
+
+  const openBulkConfigureModal = () => {
+    if (selectedDatesList.length === 0) return
+    setBulkForm({
       location_id: '',
       location_name: '',
       building: '',
@@ -215,58 +322,12 @@ export default function DeliveryPage() {
       description: '',
       is_active: true,
     })
-    setScheduleFormError('')
-  }
-
-  const openAddLocationForDate = () => {
-    setEditingSchedule(null)
-    setScheduleForm({
-      location_id: '',
-      location_name: '',
-      building: '',
-      route_name: '',
-      description: '',
-      is_active: true,
-    })
-    setScheduleFormError('')
-    setIsAddingLocationToDate(true)
-  }
-
-  const openEditSchedule = (sch: DeliverySchedule) => {
-    setEditingSchedule(sch)
-    setScheduleForm({
-      location_id: sch.location_id || '',
-      location_name: sch.location_name,
-      building: sch.building || '',
-      route_name: sch.route_name || '',
-      description: sch.description || '',
-      is_active: sch.is_active,
-    })
-    setScheduleFormError('')
-    setIsAddingLocationToDate(true)
-  }
-
-  const handleSelectPresetLocation = (locId: string) => {
-    const loc = locations.find((l) => l.id === locId)
-    if (loc) {
-      setScheduleForm((prev) => ({
-        ...prev,
-        location_id: loc.id,
-        location_name: loc.name,
-        building: loc.building || '',
-        route_name: loc.route_name || '',
-        description: loc.description || prev.description,
-      }))
-    } else {
-      setScheduleForm((prev) => ({
-        ...prev,
-        location_id: '',
-      }))
-    }
+    setBulkFormError('')
+    setIsBulkModalOpen(true)
   }
 
   // ==========================================
-  // Location Management Mutations
+  // Location Preset Mutations
   // ==========================================
   const locationMutation = useMutation({
     mutationFn: async () => {
@@ -285,7 +346,7 @@ export default function DeliveryPage() {
       setLocationFormError('')
     },
     onError: (err: any) => {
-      setLocationFormError(err.message || 'เกิดข้อผิดพลาดในการบันทึก')
+      setLocationFormError(err.message || 'เกิดข้อผิดพลาด')
     },
   })
 
@@ -294,9 +355,7 @@ export default function DeliveryPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-delivery-locations'] })
     },
-    onError: (err: any) => {
-      alert(err.message || 'เกิดข้อผิดพลาดในการลบสถานที่')
-    },
+    onError: (err: any) => alert(err.message || 'เกิดข้อผิดพลาดในการลบ'),
   })
 
   const filteredLocations = locations.filter((l) => {
@@ -309,16 +368,16 @@ export default function DeliveryPage() {
   })
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-24">
+    <div className="mx-auto max-w-6xl space-y-6 pb-28">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[hsl(var(--foreground))] flex items-center gap-2.5">
             <CalendarIcon className="h-6 w-6 text-[hsl(var(--primary))]" />
-            ปฏิทินรอบจัดส่ง (Delivery Schedule Calendar)
+            ปฏิทินรอบจัดส่ง (Multi-Date Delivery Calendar)
           </h1>
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            คลิกเลือกวันที่ในอนาคตเพื่อกำหนดสถานที่และรอบจัดส่งสินค้า (Scheduled Route Delivery)
+            คลิกเลือกวันที่ได้หลายวันพร้อมกันเพื่อกำหนดรอบจัดส่งสินค้า (Scheduled Route Delivery) ในครั้งเดียว
           </p>
         </div>
 
@@ -349,13 +408,25 @@ export default function DeliveryPage() {
         </div>
       </div>
 
+      {/* Success Notification Banner */}
+      {bulkSuccessMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-2.5 shadow-sm"
+        >
+          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+          <span>{bulkSuccessMessage}</span>
+        </motion.div>
+      )}
+
       {/* ======================================================== */}
       {/* TAB 1: CALENDAR VIEW */}
       {/* ======================================================== */}
       {activeTab === 'calendar' && (
         <div className="space-y-4">
-          {/* Calendar Controls & Legend */}
-          <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm">
+          {/* Calendar Navigation & Selection Toolbar */}
+          <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               {/* Month Navigation */}
               <div className="flex items-center gap-2">
@@ -366,7 +437,7 @@ export default function DeliveryPage() {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <h2 className="min-w-[160px] text-center text-lg font-bold text-[hsl(var(--foreground))]">
+                <h2 className="min-w-[170px] text-center text-lg font-bold text-[hsl(var(--foreground))]">
                   {MONTH_NAMES_THAI[calMonth - 1]} {calYear + 543} ({calYear})
                 </h2>
                 <button
@@ -384,24 +455,44 @@ export default function DeliveryPage() {
                 </button>
               </div>
 
-              {/* Legend */}
-              <div className="flex flex-wrap items-center gap-3 text-xs text-[hsl(var(--muted-foreground))]">
-                <div className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-md bg-[hsl(var(--primary))]" />
-                  <span>มีรอบจัดส่ง (เปิดรับ)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-md bg-rose-500/80" />
-                  <span>ปิดรับชั่วคราว</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))]" />
-                  <span>วันที่ในอนาคต (คลิกเพื่อเพิ่มรอบ)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-md bg-[hsl(var(--muted))]/50 opacity-60" />
-                  <span>วันนี้ / อดีต (ปิด)</span>
-                </div>
+              {/* Multi-select Quick Helpers */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={selectAllVisibleFutureDays}
+                  className="flex items-center gap-1.5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--accent))]"
+                >
+                  <CheckSquare className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
+                  เลือกทุกวันในเดือนนี้ ({visibleFutureDays.length} วัน)
+                </button>
+                {selectedDates.size > 0 && (
+                  <button
+                    onClick={clearSelection}
+                    className="flex items-center gap-1.5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--muted-foreground))] hover:text-rose-500"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    ล้างที่เลือก ({selectedDates.size})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-4 border-t border-[hsl(var(--border))]/60 pt-3 text-xs text-[hsl(var(--muted-foreground))]">
+              <div className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-md bg-[hsl(var(--primary))]" />
+                <span>มีรอบจัดส่ง (เปิดรับ)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-md bg-rose-500/80" />
+                <span>ปิดรับชั่วคราว</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-md border-2 border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/20" />
+                <span>วันที่เลือกไว้ (Selected)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-md bg-[hsl(var(--muted))]/50 opacity-60" />
+                <span>วันนี้ / วันในอดีต (ปิด)</span>
               </div>
             </div>
           </div>
@@ -424,43 +515,60 @@ export default function DeliveryPage() {
                 const daySchedules = schedulesByDate.get(day.dateString) || []
                 const hasSchedules = daySchedules.length > 0
                 const activeCount = daySchedules.filter((s) => s.is_active).length
-                const inactiveCount = daySchedules.length - activeCount
 
+                const isSelected = selectedDates.has(day.dateString)
                 const isClickable = day.isFuture
 
                 return (
                   <div
                     key={day.dateString}
-                    onClick={() => handleDateClick(day.dateString, day.isFuture)}
-                    className={`group relative min-h-[90px] p-2 transition-all sm:min-h-[110px] ${
+                    onClick={() => toggleDateSelection(day.dateString, day.isFuture)}
+                    className={`group relative min-h-[95px] p-2 transition-all sm:min-h-[115px] select-none ${
                       !day.isCurrentMonth
                         ? 'bg-[hsl(var(--muted))]/20 opacity-40'
                         : day.isPast || day.isToday
                         ? 'bg-[hsl(var(--muted))]/30 cursor-not-allowed'
                         : isClickable
-                        ? 'cursor-pointer bg-[hsl(var(--card))] hover:bg-[hsl(var(--accent))]/50'
+                        ? 'cursor-pointer hover:bg-[hsl(var(--accent))]/50'
                         : ''
                     } ${
-                      selectedDate === day.dateString
-                        ? 'ring-2 ring-inset ring-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5'
+                      isSelected
+                        ? 'bg-[hsl(var(--primary))]/10 ring-2 ring-inset ring-[hsl(var(--primary))]'
                         : ''
                     }`}
                   >
-                    {/* Date Number */}
+                    {/* Top Row: Date Number + Checkbox/Badge */}
                     <div className="flex items-center justify-between">
-                      <span
-                        className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                          day.isToday
-                            ? 'bg-amber-500 text-white'
-                            : hasSchedules && activeCount > 0
-                            ? 'bg-[hsl(var(--primary))] text-white'
-                            : day.isFuture
-                            ? 'text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--primary))]'
-                            : 'text-[hsl(var(--muted-foreground))]'
-                        }`}
-                      >
-                        {day.dayNumber}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {day.isFuture && (
+                          <div
+                            className={`flex h-4 w-4 items-center justify-center rounded transition-colors ${
+                              isSelected
+                                ? 'bg-[hsl(var(--primary))] text-white'
+                                : 'border border-[hsl(var(--border))] group-hover:border-[hsl(var(--primary))]'
+                            }`}
+                          >
+                            {isSelected ? (
+                              <Check className="h-3 w-3 stroke-[3]" />
+                            ) : (
+                              <span className="opacity-0 group-hover:opacity-100 text-[9px] text-[hsl(var(--primary))]">+</span>
+                            )}
+                          </div>
+                        )}
+                        <span
+                          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                            day.isToday
+                              ? 'bg-amber-500 text-white'
+                              : hasSchedules && activeCount > 0
+                              ? 'bg-[hsl(var(--primary))] text-white'
+                              : day.isFuture
+                              ? 'text-[hsl(var(--foreground))] font-extrabold'
+                              : 'text-[hsl(var(--muted-foreground))]'
+                          }`}
+                        >
+                          {day.dayNumber}
+                        </span>
+                      </div>
 
                       {day.isToday && (
                         <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-extrabold text-amber-600 dark:text-amber-400">
@@ -468,23 +576,34 @@ export default function DeliveryPage() {
                         </span>
                       )}
 
-                      {day.isFuture && !hasSchedules && day.isCurrentMonth && (
-                        <span className="hidden text-[10px] text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 sm:inline">
-                          + เพิ่มรอบ
-                        </span>
+                      {/* Manage Single Date Button */}
+                      {day.isFuture && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSingleDateModal(day.dateString)
+                            setIsAddingLocationToSingleDate(false)
+                            setEditingSchedule(null)
+                          }}
+                          className="rounded-lg p-1 text-[10px] text-[hsl(var(--muted-foreground))] opacity-0 hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--primary))] group-hover:opacity-100 transition-opacity"
+                          title="ดูรายละเอียด/จัดการเฉพาะวันนี้"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
                       )}
                     </div>
 
-                    {/* Schedule Badges inside Cell */}
+                    {/* Schedule Badges */}
                     {hasSchedules && (
                       <div className="mt-2 space-y-1">
                         {daySchedules.slice(0, 2).map((sch) => (
                           <div
                             key={sch.id}
-                            className={`truncate rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                            className={`truncate rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
                               sch.is_active
-                                ? 'bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] border border-[hsl(var(--primary))]/30'
-                                : 'bg-rose-500/10 text-rose-600 border border-rose-500/30'
+                                ? 'bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] border border-[hsl(var(--primary))]/20'
+                                : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
                             }`}
                             title={`${sch.location_name} ${sch.building ? `(${sch.building})` : ''}`}
                           >
@@ -492,7 +611,7 @@ export default function DeliveryPage() {
                           </div>
                         ))}
                         {daySchedules.length > 2 && (
-                          <div className="text-[10px] font-bold text-[hsl(var(--muted-foreground))] pl-1">
+                          <div className="text-[9px] font-bold text-[hsl(var(--muted-foreground))] pl-1">
                             +{daySchedules.length - 2} จุดส่ง
                           </div>
                         )}
@@ -505,6 +624,669 @@ export default function DeliveryPage() {
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* FLOATING BULK ACTIONS BAR (When 1 or more dates selected) */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {selectedDates.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 inset-x-4 max-w-4xl mx-auto z-40 rounded-3xl border border-[hsl(var(--primary))]/30 bg-[hsl(var(--card))]/95 p-4 shadow-2xl backdrop-blur-md"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[hsl(var(--primary))] text-white font-black text-base shadow-md shadow-[hsl(var(--primary))]/25">
+                  {selectedDates.size}
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[hsl(var(--foreground))]">
+                    เลือกไว้ทั้งหมด {selectedDates.size} วัน
+                  </h3>
+                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                    {selectedDatesList.slice(0, 3).map((d) => formatDeliveryDateThai(d)).join(', ')}
+                    {selectedDates.size > 3 ? ` และอีก ${selectedDates.size - 3} วัน` : ''}
+                  </p>
+                </div>
+              </div>
+
+              {/* Bulk Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={openBulkConfigureModal}
+                  className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90 transition-all active:scale-[0.98]"
+                >
+                  <Plus className="h-4 w-4" />
+                  กำหนดจุดส่งพร้อมกัน (Apply to {selectedDates.size} Dates)
+                </button>
+
+                <button
+                  onClick={() => bulkActivateMutation.mutate(true)}
+                  disabled={bulkActivateMutation.isPending}
+                  className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
+                  title="เปิดรับออเดอร์ทุกจุดในวันที่เลือก"
+                >
+                  เปิดรับทั้งหมด
+                </button>
+
+                <button
+                  onClick={() => bulkActivateMutation.mutate(false)}
+                  disabled={bulkActivateMutation.isPending}
+                  className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-500/20 dark:text-rose-400"
+                  title="ปิดรับออเดอร์ชั่วคราวในวันที่เลือก"
+                >
+                  ปิดรับทั้งหมด
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบรอบจัดส่งทั้งหมดใน ${selectedDates.size} วันที่เลือกไว้?`)) {
+                      bulkDeleteMutation.mutate()
+                    }
+                  }}
+                  disabled={bulkDeleteMutation.isPending}
+                  className="rounded-xl border border-[hsl(var(--border))] p-2 text-xs text-rose-500 hover:bg-rose-500/10"
+                  title="ลบรอบจัดส่งในวันที่เลือก"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+
+                <button
+                  onClick={clearSelection}
+                  className="rounded-xl border border-[hsl(var(--border))] px-3 py-2 text-xs font-semibold text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 1: BULK CONFIGURATION PANEL (Configure Selected) */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {isBulkModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-lg rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl"
+            >
+              <div className="mb-4 flex items-center justify-between border-b border-[hsl(var(--border))] pb-3">
+                <div>
+                  <h2 className="text-lg font-bold text-[hsl(var(--foreground))]">
+                    กำหนดรอบจัดส่งพร้อมกัน ({selectedDates.size} วัน)
+                  </h2>
+                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                    กำหนดสถานที่และรายละเอียด 1 ครั้ง และนำไปสร้างรอบให้ทุกวันที่เลือก
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsBulkModalOpen(false)}
+                  className="rounded-lg p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Selected Dates Chips Preview */}
+              <div className="mb-4 rounded-2xl bg-[hsl(var(--muted))]/40 p-3">
+                <label className="text-[11px] font-bold text-[hsl(var(--muted-foreground))] uppercase block mb-1.5">
+                  วันที่เลือก ({selectedDates.size} วัน):
+                </label>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  {selectedDatesList.map((d) => (
+                    <span
+                      key={d}
+                      className="rounded-lg bg-[hsl(var(--card))] border border-[hsl(var(--border))] px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--foreground))]"
+                    >
+                      📅 {formatDeliveryDateThai(d)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {bulkFormError && (
+                <div className="mb-4 rounded-xl bg-rose-50 p-3 text-xs font-medium text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
+                  {bulkFormError}
+                </div>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!bulkForm.location_name.trim()) {
+                    setBulkFormError('กรุณากรอกชื่อสถานที่จัดส่ง')
+                    return
+                  }
+                  setShowBulkConfirmModal(true)
+                }}
+                className="space-y-3.5"
+              >
+                {locations.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                      เลือกจากสถานที่ที่บันทึกไว้ (Presets)
+                    </label>
+                    <select
+                      value={bulkForm.location_id}
+                      onChange={(e) => {
+                        const loc = locations.find((l) => l.id === e.target.value)
+                        if (loc) {
+                          setBulkForm((prev) => ({
+                            ...prev,
+                            location_id: loc.id,
+                            location_name: loc.name,
+                            building: loc.building || '',
+                            route_name: loc.route_name || '',
+                            description: loc.description || prev.description,
+                          }))
+                        } else {
+                          setBulkForm((prev) => ({ ...prev, location_id: '' }))
+                        }
+                      }}
+                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2.5 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                    >
+                      <option value="">-- กรอกเอง หรือ เลือกจากสถานที่ที่บันทึกไว้ --</option>
+                      {locations.map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.name} {loc.building ? `(${loc.building})` : ''} {loc.route_name ? `• ${loc.route_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                      ชื่อสถานที่ / จุดส่ง <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น ABC Tower หรือ Silom CBD"
+                      value={bulkForm.location_name}
+                      onChange={(e) => setBulkForm({ ...bulkForm, location_name: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                      ชื่ออาคาร / ตึก (Building)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น อาคาร 1"
+                      value={bulkForm.building}
+                      onChange={(e) => setBulkForm({ ...bulkForm, building: e.target.value })}
+                      className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                    ชื่อเส้นทาง (Route Name)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น Route A - สีลม"
+                    value={bulkForm.route_name}
+                    onChange={(e) => setBulkForm({ ...bulkForm, route_name: e.target.value })}
+                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                    คำอธิบาย / จุดนัดรับ (Description)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น ส่งที่เคาน์เตอร์ล็อบบี้ส่วนกลาง"
+                    value={bulkForm.description}
+                    onChange={(e) => setBulkForm({ ...bulkForm, description: e.target.value })}
+                    className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="bulk_is_active"
+                    checked={bulkForm.is_active}
+                    onChange={(e) => setBulkForm({ ...bulkForm, is_active: e.target.checked })}
+                    className="h-4 w-4 rounded text-[hsl(var(--primary))]"
+                  />
+                  <label htmlFor="bulk_is_active" className="text-xs font-medium text-[hsl(var(--foreground))]">
+                    เปิดรับออเดอร์สำหรับทุกวันที่เลือก (Active)
+                  </label>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-3 border-t border-[hsl(var(--border))] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkModalOpen(false)}
+                    className="rounded-xl border border-[hsl(var(--border))] px-4 py-2 text-xs font-semibold text-[hsl(var(--foreground))]"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90"
+                  >
+                    ตรวจสอบและนำไปใช้ ({selectedDates.size} วัน)
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 2: BULK CONFIRMATION SUMMARY (Section 8) */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {showBulkConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl text-center"
+            >
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]">
+                <CheckSquare className="h-7 w-7" />
+              </div>
+
+              <h2 className="text-lg font-bold text-[hsl(var(--foreground))]">ยืนยันการตั้งค่ารอบจัดส่ง</h2>
+              <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+                คุณกำลังจะบันทึกรอบจัดส่งสำหรับ {selectedDates.size} วันที่เลือก
+              </p>
+
+              {/* Summary Card */}
+              <div className="my-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4 text-left space-y-2 text-xs">
+                <div>
+                  <strong className="text-[hsl(var(--muted-foreground))] block">สถานที่:</strong>
+                  <span className="font-bold text-[hsl(var(--foreground))] text-sm">{bulkForm.location_name}</span>
+                  {bulkForm.building && <span className="text-[hsl(var(--muted-foreground))]"> (ตึก: {bulkForm.building})</span>}
+                </div>
+                {bulkForm.description && (
+                  <div>
+                    <strong className="text-[hsl(var(--muted-foreground))] block">คำอธิบาย:</strong>
+                    <span className="text-[hsl(var(--foreground))]">{bulkForm.description}</span>
+                  </div>
+                )}
+                <div>
+                  <strong className="text-[hsl(var(--muted-foreground))] block">สถานะ:</strong>
+                  <span className={bulkForm.is_active ? 'font-bold text-emerald-600' : 'font-bold text-rose-500'}>
+                    {bulkForm.is_active ? 'เปิดรับออเดอร์ (Active)' : 'ปิดชั่วคราว (Inactive)'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkConfirmModal(false)}
+                  className="rounded-xl border border-[hsl(var(--border))] px-4 py-2.5 text-xs font-semibold text-[hsl(var(--foreground))]"
+                >
+                  ย้อนกลับ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => bulkApplyMutation.mutate()}
+                  disabled={bulkApplyMutation.isPending}
+                  className="flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-[hsl(var(--primary))]/90"
+                >
+                  {bulkApplyMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> กำลังบันทึก...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" /> ยืนยันและบันทึก
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 3: SINGLE DATE MANAGER (Individual Day View & Edit) */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {singleDateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl"
+            >
+              <div className="mb-5 flex items-center justify-between border-b border-[hsl(var(--border))] pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-[hsl(var(--primary))] uppercase">
+                    <CalendarIcon className="h-4 w-4" /> รอบจัดส่งประจำวัน (Single Date)
+                  </div>
+                  <h2 className="text-xl font-black text-[hsl(var(--foreground))] mt-0.5">
+                    {formatDeliveryDateThai(singleDateModal)}
+                  </h2>
+                  <p className="text-xs text-[hsl(var(--muted-foreground))]">วันที่: {singleDateModal}</p>
+                </div>
+                <button
+                  onClick={() => setSingleDateModal(null)}
+                  className="rounded-full p-1.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* LIST OF CONFIGURED LOCATIONS ON THIS DATE */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-[hsl(var(--foreground))] flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-[hsl(var(--primary))]" />
+                    สถานที่ที่จัดส่งในวันนี้ ({singleDateSchedules.length} แห่ง)
+                  </h3>
+
+                  {!isAddingLocationToSingleDate && (
+                    <button
+                      onClick={() => {
+                        setEditingSchedule(null)
+                        setScheduleForm({
+                          location_id: '',
+                          location_name: '',
+                          building: '',
+                          route_name: '',
+                          description: '',
+                          is_active: true,
+                        })
+                        setScheduleFormError('')
+                        setIsAddingLocationToSingleDate(true)
+                      }}
+                      className="flex items-center gap-1.5 rounded-xl bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[hsl(var(--primary))]/90"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      เพิ่มจุดส่งในวันนี้
+                    </button>
+                  )}
+                </div>
+
+                {singleDateSchedules.length === 0 && !isAddingLocationToSingleDate ? (
+                  <div className="rounded-2xl border border-dashed border-[hsl(var(--border))] p-6 text-center">
+                    <MapPin className="mx-auto h-8 w-8 text-[hsl(var(--muted-foreground))]/40" />
+                    <p className="mt-2 text-sm font-semibold text-[hsl(var(--foreground))]">
+                      ยังไม่ได้กำหนดจุดจัดส่งในวันนี้
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {singleDateSchedules.map((sch) => (
+                      <div
+                        key={sch.id}
+                        className={`flex items-start justify-between rounded-2xl border p-4 transition-all ${
+                          sch.is_active
+                            ? 'border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-sm'
+                            : 'border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 opacity-70'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-[hsl(var(--foreground))]">
+                              📍 {sch.location_name}
+                            </span>
+                            {sch.building && (
+                              <span className="rounded-md bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--primary))]">
+                                {sch.building}
+                              </span>
+                            )}
+                          </div>
+                          {sch.route_name && (
+                            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                              เส้นทาง: {sch.route_name}
+                            </p>
+                          )}
+                          {sch.description && (
+                            <p className="text-xs text-[hsl(var(--muted-foreground))] rounded bg-[hsl(var(--muted))]/50 px-2 py-1 mt-1">
+                              {sch.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleScheduleActive(sch)}
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                              sch.is_active
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400'
+                            }`}
+                          >
+                            {sch.is_active ? 'เปิดรับ' : 'ปิด'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingSchedule(sch)
+                              setScheduleForm({
+                                location_id: sch.location_id || '',
+                                location_name: sch.location_name,
+                                building: sch.building || '',
+                                route_name: sch.route_name || '',
+                                description: sch.description || '',
+                                is_active: sch.is_active,
+                              })
+                              setScheduleFormError('')
+                              setIsAddingLocationToSingleDate(true)
+                            }}
+                            className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                            title="แก้ไข"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`ลบจุดส่ง "${sch.location_name}" ในวันที่ ${singleDateModal}?`)) {
+                                deleteScheduleMutation.mutate(sch.id)
+                              }
+                            }}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                            title="ลบ"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Single Date Form */}
+                <AnimatePresence>
+                  {isAddingLocationToSingleDate && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden rounded-2xl border border-[hsl(var(--primary))]/30 bg-[hsl(var(--card))] p-4 shadow-sm"
+                    >
+                      <div className="mb-3 flex items-center justify-between border-b border-[hsl(var(--border))] pb-2">
+                        <h4 className="text-sm font-bold text-[hsl(var(--foreground))]">
+                          {editingSchedule ? 'แก้ไขจุดจัดส่ง' : 'เพิ่มจุดจัดส่งใหม่สำหรับวันนี้'}
+                        </h4>
+                        <button
+                          onClick={() => {
+                            setIsAddingLocationToSingleDate(false)
+                            setEditingSchedule(null)
+                          }}
+                          className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      {scheduleFormError && (
+                        <div className="mb-3 rounded-xl bg-rose-50 p-2.5 text-xs text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
+                          {scheduleFormError}
+                        </div>
+                      )}
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          singleScheduleMutation.mutate()
+                        }}
+                        className="space-y-3"
+                      >
+                        {locations.length > 0 && (
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                              เลือกจากสถานที่ที่บันทึกไว้ (Presets)
+                            </label>
+                            <select
+                              value={scheduleForm.location_id}
+                              onChange={(e) => {
+                                const loc = locations.find((l) => l.id === e.target.value)
+                                if (loc) {
+                                  setScheduleForm((prev) => ({
+                                    ...prev,
+                                    location_id: loc.id,
+                                    location_name: loc.name,
+                                    building: loc.building || '',
+                                    route_name: loc.route_name || '',
+                                    description: loc.description || prev.description,
+                                  }))
+                                } else {
+                                  setScheduleForm((prev) => ({ ...prev, location_id: '' }))
+                                }
+                              }}
+                              className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                            >
+                              <option value="">-- พิมพ์เอง หรือ เลือกจากสถานที่ที่บันทึกไว้ --</option>
+                              {locations.map((loc) => (
+                                <option key={loc.id} value={loc.id}>
+                                  {loc.name} {loc.building ? `(${loc.building})` : ''} {loc.route_name ? `• ${loc.route_name}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                              ชื่อสถานที่ / จุดส่ง <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="เช่น ABC Tower"
+                              value={scheduleForm.location_name}
+                              onChange={(e) => setScheduleForm({ ...scheduleForm, location_name: e.target.value })}
+                              required
+                              className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                              ชื่ออาคาร / ตึก
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="เช่น อาคาร A"
+                              value={scheduleForm.building}
+                              onChange={(e) => setScheduleForm({ ...scheduleForm, building: e.target.value })}
+                              className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                            ชื่อเส้นทาง (Route Name)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="เช่น Route 1"
+                            value={scheduleForm.route_name}
+                            onChange={(e) => setScheduleForm({ ...scheduleForm, route_name: e.target.value })}
+                            className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
+                            คำอธิบาย / จุดนัดรับ
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="เช่น จัดส่งที่เคาน์เตอร์ล็อบบี้ชั้น 1"
+                            value={scheduleForm.description}
+                            onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
+                            className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <input
+                            type="checkbox"
+                            id="single_is_active"
+                            checked={scheduleForm.is_active}
+                            onChange={(e) => setScheduleForm({ ...scheduleForm, is_active: e.target.checked })}
+                            className="h-4 w-4 rounded text-[hsl(var(--primary))]"
+                          />
+                          <label htmlFor="single_is_active" className="text-xs font-medium text-[hsl(var(--foreground))]">
+                            เปิดรับออเดอร์ในจุดส่งนี้ (Active)
+                          </label>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingLocationToSingleDate(false)
+                              setEditingSchedule(null)
+                            }}
+                            className="rounded-xl border border-[hsl(var(--border))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--foreground))]"
+                          >
+                            ยกเลิก
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={singleScheduleMutation.isPending}
+                            className="flex items-center gap-1.5 rounded-xl bg-[hsl(var(--primary))] px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[hsl(var(--primary))]/90"
+                          >
+                            {singleScheduleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            บันทึกจุดส่ง
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="mt-6 border-t border-[hsl(var(--border))] pt-4 flex justify-end">
+                <button
+                  onClick={() => setSingleDateModal(null)}
+                  className="rounded-xl bg-[hsl(var(--muted))] px-5 py-2 text-xs font-bold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--accent))]"
+                >
+                  เสร็จสิ้น / ปิดหน้าต่าง
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ======================================================== */}
       {/* TAB 2: LOCATIONS MANAGEMENT VIEW */}
@@ -631,307 +1413,7 @@ export default function DeliveryPage() {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: DATE SCHEDULE MANAGER (When clicking a future date) */}
-      {/* ======================================================== */}
-      <AnimatePresence>
-        {selectedDate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl"
-            >
-              {/* Modal Header */}
-              <div className="mb-5 flex items-center justify-between border-b border-[hsl(var(--border))] pb-4">
-                <div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-[hsl(var(--primary))] uppercase">
-                    <CalendarIcon className="h-4 w-4" /> รอบจัดส่งประจำวัน
-                  </div>
-                  <h2 className="text-xl font-black text-[hsl(var(--foreground))] mt-0.5">
-                    {formatDeliveryDateThai(selectedDate)}
-                  </h2>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">วันที่: {selectedDate}</p>
-                </div>
-                <button
-                  onClick={() => setSelectedDate(null)}
-                  className="rounded-full p-1.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* LIST OF CONFIGURED LOCATIONS ON THIS DATE */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-[hsl(var(--foreground))] flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-[hsl(var(--primary))]" />
-                    สถานที่ที่จัดส่งในวันนี้ ({selectedDateSchedules.length} แห่ง)
-                  </h3>
-
-                  {!isAddingLocationToDate && (
-                    <button
-                      onClick={openAddLocationForDate}
-                      className="flex items-center gap-1.5 rounded-xl bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[hsl(var(--primary))]/90"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      เพิ่มจุดส่งในวันนี้
-                    </button>
-                  )}
-                </div>
-
-                {/* Locations list */}
-                {selectedDateSchedules.length === 0 && !isAddingLocationToDate ? (
-                  <div className="rounded-2xl border border-dashed border-[hsl(var(--border))] p-6 text-center">
-                    <MapPin className="mx-auto h-8 w-8 text-[hsl(var(--muted-foreground))]/40" />
-                    <p className="mt-2 text-sm font-semibold text-[hsl(var(--foreground))]">
-                      ยังไม่ได้กำหนดจุดจัดส่งในวันนี้
-                    </p>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
-                      ลูกค้าจะไม่เห็นวันที่นี้ในหน้า Checkout จนกว่าคุณจะเพิ่มจุดส่งอย่างน้อย 1 แห่ง
-                    </p>
-                    <button
-                      onClick={openAddLocationForDate}
-                      className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[hsl(var(--primary))] px-4 py-2 text-xs font-bold text-white"
-                    >
-                      <Plus className="h-4 w-4" /> เพิ่มจุดส่งแรก
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {selectedDateSchedules.map((sch) => (
-                      <div
-                        key={sch.id}
-                        className={`flex items-start justify-between rounded-2xl border p-4 transition-all ${
-                          sch.is_active
-                            ? 'border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-sm'
-                            : 'border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 opacity-70'
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-[hsl(var(--foreground))]">
-                              📍 {sch.location_name}
-                            </span>
-                            {sch.building && (
-                              <span className="rounded-md bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--primary))]">
-                                {sch.building}
-                              </span>
-                            )}
-                          </div>
-                          {sch.route_name && (
-                            <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                              เส้นทาง: {sch.route_name}
-                            </p>
-                          )}
-                          {sch.description && (
-                            <p className="text-xs text-[hsl(var(--muted-foreground))] rounded bg-[hsl(var(--muted))]/50 px-2 py-1 mt-1">
-                              {sch.description}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => toggleScheduleActive(sch)}
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors ${
-                              sch.is_active
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
-                                : 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400'
-                            }`}
-                          >
-                            {sch.is_active ? 'เปิดรับออเดอร์' : 'ปิดชั่วคราว'}
-                          </button>
-                          <button
-                            onClick={() => openEditSchedule(sch)}
-                            className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
-                            title="แก้ไข"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`ลบจุดส่ง "${sch.location_name}" ในวันที่ ${selectedDate}?`)) {
-                                deleteScheduleMutation.mutate(sch.id)
-                              }
-                            }}
-                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
-                            title="ลบ"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* FORM: ADD / EDIT LOCATION ON THIS DATE */}
-                <AnimatePresence>
-                  {isAddingLocationToDate && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden rounded-2xl border border-[hsl(var(--primary))]/30 bg-[hsl(var(--card))] p-4 shadow-sm"
-                    >
-                      <div className="mb-3 flex items-center justify-between border-b border-[hsl(var(--border))] pb-2">
-                        <h4 className="text-sm font-bold text-[hsl(var(--foreground))]">
-                          {editingSchedule ? 'แก้ไขจุดจัดส่ง' : 'เพิ่มจุดจัดส่งใหม่สำหรับวันนี้'}
-                        </h4>
-                        <button
-                          onClick={() => {
-                            setIsAddingLocationToDate(false)
-                            setEditingSchedule(null)
-                          }}
-                          className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {scheduleFormError && (
-                        <div className="mb-3 rounded-xl bg-rose-50 p-2.5 text-xs text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
-                          {scheduleFormError}
-                        </div>
-                      )}
-
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault()
-                          scheduleMutation.mutate()
-                        }}
-                        className="space-y-3"
-                      >
-                        {locations.length > 0 && (
-                          <div>
-                            <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                              เลือกจากสถานที่ที่บันทึกไว้ (Presets)
-                            </label>
-                            <select
-                              value={scheduleForm.location_id}
-                              onChange={(e) => handleSelectPresetLocation(e.target.value)}
-                              className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                            >
-                              <option value="">-- พิมพ์เอง หรือ เลือกจากสถานที่ที่บันทึกไว้ --</option>
-                              {locations.map((loc) => (
-                                <option key={loc.id} value={loc.id}>
-                                  {loc.name} {loc.building ? `(${loc.building})` : ''} {loc.route_name ? `• ${loc.route_name}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <div>
-                            <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                              ชื่อสถานที่ / จุดส่ง <span className="text-rose-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="เช่น ABC Tower หรือ โซนสีลม"
-                              value={scheduleForm.location_name}
-                              onChange={(e) => setScheduleForm({ ...scheduleForm, location_name: e.target.value })}
-                              required
-                              className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                              ชื่ออาคาร / ตึก (Building)
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="เช่น อาคาร A"
-                              value={scheduleForm.building}
-                              onChange={(e) => setScheduleForm({ ...scheduleForm, building: e.target.value })}
-                              className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                            ชื่อเส้นทาง (Route Name)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="เช่น Route 1"
-                            value={scheduleForm.route_name}
-                            onChange={(e) => setScheduleForm({ ...scheduleForm, route_name: e.target.value })}
-                            className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-[hsl(var(--foreground))]">
-                            คำอธิบาย / จุดนัดรับ (Description)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="เช่น จัดส่งที่เคาน์เตอร์ล็อบบี้ชั้น 1"
-                            value={scheduleForm.description}
-                            onChange={(e) => setScheduleForm({ ...scheduleForm, description: e.target.value })}
-                            className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-xs text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <input
-                            type="checkbox"
-                            id="modal_sch_active"
-                            checked={scheduleForm.is_active}
-                            onChange={(e) => setScheduleForm({ ...scheduleForm, is_active: e.target.checked })}
-                            className="h-4 w-4 rounded text-[hsl(var(--primary))]"
-                          />
-                          <label htmlFor="modal_sch_active" className="text-xs font-medium text-[hsl(var(--foreground))]">
-                            เปิดรับออเดอร์ในจุดส่งนี้ (Active)
-                          </label>
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2 pt-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsAddingLocationToDate(false)
-                              setEditingSchedule(null)
-                            }}
-                            className="rounded-xl border border-[hsl(var(--border))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--foreground))]"
-                          >
-                            ยกเลิก
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={scheduleMutation.isPending}
-                            className="flex items-center gap-1.5 rounded-xl bg-[hsl(var(--primary))] px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[hsl(var(--primary))]/90"
-                          >
-                            {scheduleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                            บันทึกจุดส่ง
-                          </button>
-                        </div>
-                      </form>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Close footer button */}
-              <div className="mt-6 border-t border-[hsl(var(--border))] pt-4 flex justify-end">
-                <button
-                  onClick={() => setSelectedDate(null)}
-                  className="rounded-xl bg-[hsl(var(--muted))] px-5 py-2 text-xs font-bold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--accent))]"
-                >
-                  เสร็จสิ้น / ปิดหน้าต่าง
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ======================================================== */}
-      {/* MODAL: LOCATION PRESET MANAGER (Add / Edit Location Preset) */}
+      {/* MODAL 4: LOCATION PRESET MANAGER (Add / Edit Preset) */}
       {/* ======================================================== */}
       <AnimatePresence>
         {isLocationModalOpen && (
@@ -950,7 +1432,7 @@ export default function DeliveryPage() {
                   onClick={() => setIsLocationModalOpen(false)}
                   className="rounded-lg p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))]"
                 >
-                  <XCircle className="h-5 w-5" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
@@ -1027,7 +1509,7 @@ export default function DeliveryPage() {
                     id="location_active"
                     checked={locationForm.is_active}
                     onChange={(e) => setLocationForm({ ...locationForm, is_active: e.target.checked })}
-                    className="h-4 w-4 rounded text-[hsl(var(--primary))] focus:ring-[hsl(var(--ring))]"
+                    className="h-4 w-4 rounded text-[hsl(var(--primary))]"
                   />
                   <label htmlFor="location_active" className="text-sm font-medium text-[hsl(var(--foreground))]">
                     เปิดใช้งานสถานที่นี้ (Active)
