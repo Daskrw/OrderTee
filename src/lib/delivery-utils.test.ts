@@ -5,6 +5,8 @@ import {
   isStrictlyFutureDate,
   getBangkokDateTime,
   formatScheduleCardDate,
+  getCalendarMonthDays,
+  type CalendarDay,
   DELIVERY_TIME_WINDOWS,
 } from './delivery-utils'
 
@@ -118,3 +120,27 @@ describe('4. Timezone & Bangkok DateTime Parsing', () => {
     expect(formatted.month).toBe('ส.ค.')
   })
 })
+
+describe('5. Calendar Month Grid Calculation', () => {
+  it('correctly generates grid cells with past/today/future flags for August 2026', () => {
+    const baseDate = createBangkokTime(2026, 8, 24, 12, 0)
+    const days = getCalendarMonthDays(2026, 8, baseDate)
+
+    expect(days.length % 7).toBe(0) // Full weeks grid
+    expect(days.length).toBeGreaterThanOrEqual(28)
+
+    const todayCell = days.find((d: CalendarDay) => d.dateString === '2026-08-24')
+    expect(todayCell).toBeDefined()
+    expect(todayCell?.isToday).toBe(true)
+    expect(todayCell?.isFuture).toBe(false)
+
+    const pastCell = days.find((d: CalendarDay) => d.dateString === '2026-08-23')
+    expect(pastCell?.isPast).toBe(true)
+    expect(pastCell?.isFuture).toBe(false)
+
+    const futureCell = days.find((d: CalendarDay) => d.dateString === '2026-08-25')
+    expect(futureCell?.isFuture).toBe(true)
+    expect(futureCell?.isPast).toBe(false)
+  })
+})
+

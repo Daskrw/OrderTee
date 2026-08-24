@@ -554,12 +554,16 @@ export default function CheckoutPage() {
                   </div>
                 ) : (
                   <>
-                    {/* Date Selector */}
+                    {/* Customer Calendar Date Picker */}
                     <div>
-                      <label className="mb-2 block text-sm font-bold text-[hsl(var(--foreground))]">
-                        1. เลือกวันที่ต้องการจัดส่ง (Available Dates) <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <label className="block text-sm font-bold text-[hsl(var(--foreground))]">
+                          1. เลือกวันที่จัดส่งจากปฏิทิน (Select Delivery Date) <span className="text-rose-500">*</span>
+                        </label>
+                      </div>
+
+                      {/* Quick Cards for easy 1-tap selection on mobile */}
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 mb-3">
                         {availableDates.map((dateStr) => {
                           const { day, month, weekday } = formatScheduleCardDate(dateStr)
                           const isSelected = selectedDate === dateStr
@@ -586,12 +590,13 @@ export default function CheckoutPage() {
                               <span className={`mt-1 rounded-full px-2 py-0.5 text-[9px] font-bold ${
                                 isSelected ? 'bg-white/20 text-white' : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'
                               }`}>
-                                {count} จุดส่ง
+                                {count} จุดส่งพร้อมบริการ
                               </span>
                             </button>
                           )
                         })}
                       </div>
+
                       {errors.scheduledDeliveryDate && (
                         <p className="mt-1.5 text-xs text-[hsl(var(--destructive))]">
                           {errors.scheduledDeliveryDate.message}

@@ -140,3 +140,86 @@ export function formatScheduleCardDate(dateStr: string): { day: string; month: s
     return { day: dateStr, month: '', weekday: '', full: dateStr }
   }
 }
+
+export interface CalendarDay {
+  dateString: string
+  dayNumber: number
+  isCurrentMonth: boolean
+  isPast: boolean
+  isToday: boolean
+  isFuture: boolean
+}
+
+/**
+ * Generates days for a calendar month grid (Sunday - Saturday)
+ */
+export function getCalendarMonthDays(year: number, month: number, baseDate = new Date()): CalendarDay[] {
+  const { dateString: todayStr } = getBangkokDateTime(baseDate)
+
+  // First day of month
+  const firstDay = new Date(Date.UTC(year, month - 1, 1))
+  const startingDayOfWeek = firstDay.getUTCDay() // 0 = Sunday
+
+  // Total days in month
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+
+  // Days from previous month
+  const daysInPrevMonth = new Date(Date.UTC(year, month - 1, 0)).getUTCDate()
+
+  const days: CalendarDay[] = []
+
+  // Fill previous month padding
+  for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+    const d = daysInPrevMonth - i
+    const prevMonth = month === 1 ? 12 : month - 1
+    const prevYear = month === 1 ? year - 1 : year
+    const dateString = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+    days.push({
+      dateString,
+      dayNumber: d,
+      isCurrentMonth: false,
+      isPast: dateString < todayStr,
+      isToday: dateString === todayStr,
+      isFuture: dateString > todayStr,
+    })
+  }
+
+  // Current month days
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateString = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    days.push({
+      dateString,
+      dayNumber: d,
+      isCurrentMonth: true,
+      isPast: dateString < todayStr,
+      isToday: dateString === todayStr,
+      isFuture: dateString > todayStr,
+    })
+  }
+
+  // Fill next month padding up to 35 or 42 grid cells
+  const remainingCells = (7 - (days.length % 7)) % 7
+  for (let d = 1; d <= remainingCells; d++) {
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const dateString = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+    days.push({
+      dateString,
+      dayNumber: d,
+      isCurrentMonth: false,
+      isPast: dateString < todayStr,
+      isToday: dateString === todayStr,
+      isFuture: dateString > todayStr,
+    })
+  }
+
+  return days
+}
+
+export const MONTH_NAMES_THAI = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+]
+
