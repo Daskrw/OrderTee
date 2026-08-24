@@ -95,12 +95,14 @@ CREATE TABLE orders (
   order_type TEXT NOT NULL DEFAULT 'pickup' CHECK (order_type IN ('pickup', 'delivery')),
   delivery_address TEXT,
   notes TEXT,
+  payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method IN ('cash', 'promptpay')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'preparing', 'ready', 'completed', 'cancelled')),
   total NUMERIC(10, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_orders_status ON orders (status);
+CREATE INDEX idx_orders_payment_method ON orders (payment_method);
 CREATE INDEX idx_orders_tracking ON orders (tracking_token);
 CREATE INDEX idx_orders_created ON orders (created_at DESC);
 CREATE INDEX idx_orders_queue ON orders (queue_number);

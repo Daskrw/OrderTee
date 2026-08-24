@@ -6,13 +6,14 @@ import {
   isStrictlyFutureDate,
   DELIVERY_ERROR_MESSAGES,
 } from '@/lib/delivery-utils'
-import type { Order, OrderType } from '@/types/database'
+import type { Order, OrderType, PaymentMethod } from '@/types/database'
 import type { CartItem } from '@/stores/cart-store'
 
 export interface CreateOrderInput {
   customerName: string
   customerPhone: string
   orderType: OrderType
+  paymentMethod?: PaymentMethod
   deliveryAddress?: string | null
   deliveryDate?: string | null
   deliveryFee: number
@@ -61,6 +62,7 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
     customer_name: input.customerName.trim(),
     customer_phone: input.customerPhone.trim(),
     order_type: input.orderType,
+    payment_method: input.paymentMethod || 'cash',
     delivery_address: input.deliveryAddress ?? null,
     delivery_date: input.deliveryDate ?? input.scheduledDeliveryDate ?? null,
     delivery_fee: input.deliveryFee,

@@ -117,6 +117,16 @@ export function OrderDetailDrawer({ order, onClose }: OrderDetailDrawerProps) {
                 <Phone className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
                 {order.customer_phone}
               </div>
+              <div className="flex items-center gap-2 text-[hsl(var(--foreground))]">
+                <span className="text-xs font-semibold text-[hsl(var(--muted-foreground))]">วิธีชำระเงิน:</span>
+                <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${
+                  order.payment_method === 'promptpay'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
+                }`}>
+                  {order.payment_method === 'promptpay' ? '📱 สแกนจ่าย (PromptPay)' : '💵 เงินสด (Cash)'}
+                </span>
+              </div>
 
               {/* Scheduled Route Delivery Details */}
               {(order.order_type === 'scheduled_route' || order.scheduled_delivery_date) && (

@@ -283,9 +283,17 @@ export default function TrackOrderPage() {
           ))}
         </div>
 
-        <div className="border-t border-[hsl(var(--border))] pt-4 flex items-center justify-between font-bold text-lg">
-          <span className="text-[hsl(var(--foreground))]">ยอดรวมทั้งหมด</span>
-          <span className="text-[hsl(var(--primary))]">{formatCurrency(order.total)}</span>
+        <div className="border-t border-[hsl(var(--border))] pt-3 space-y-2">
+          <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
+            <span>วิธีชำระเงิน</span>
+            <span className="font-semibold text-[hsl(var(--foreground))]">
+              {order.payment_method === 'promptpay' ? '📱 สแกนจ่าย PromptPay (061-608-0720)' : '💵 ชำระเงินสด (Cash)'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between font-bold text-lg pt-1">
+            <span className="text-[hsl(var(--foreground))]">ยอดรวมทั้งหมด</span>
+            <span className="text-[hsl(var(--primary))]">{formatCurrency(order.total)}</span>
+          </div>
         </div>
       </motion.div>
 

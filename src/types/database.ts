@@ -86,6 +86,8 @@ export interface ProductAddonGroup {
   addon_group_id: string
 }
 
+export type PaymentMethod = 'cash' | 'promptpay'
+
 export interface Order {
   id: string
   order_number: string
@@ -94,6 +96,7 @@ export interface Order {
   customer_name: string
   customer_phone: string
   order_type: OrderType
+  payment_method: PaymentMethod
   delivery_address: string | null
   delivery_date: string | null
   delivery_fee: number

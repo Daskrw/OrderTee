@@ -21,12 +21,22 @@ import {
   Clock,
   AlertCircle,
   Info,
+  Banknote,
+  QrCode,
+  Copy,
+  Check,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { useCartStore, selectCartTotal } from '@/stores/cart-store'
 import { useCartPromotions } from '@/hooks/useCartPromotions'
 import { createOrder } from '@/services/orders'
 import { fetchActiveUpcomingSchedules } from '@/services/delivery'
 import { formatCurrency } from '@/lib/utils'
+import {
+  generatePromptPayPayload,
+  formatPromptPayPhone,
+  PROMPTPAY_PHONE,
+} from '@/lib/promptpay'
 import {
   isPickupAllowed,
   isImmediateDeliveryAllowed,
@@ -35,7 +45,7 @@ import {
   getBangkokDateTime,
   DELIVERY_ERROR_MESSAGES,
 } from '@/lib/delivery-utils'
-import type { Order, DeliverySchedule } from '@/types/database'
+import type { Order, DeliverySchedule, PaymentMethod } from '@/types/database'
 
 const IMMEDIATE_DELIVERY_FEE = 50
 
@@ -44,6 +54,7 @@ const schema = z
     customerName: z.string().min(2, 'กรุณากรอกชื่ออย่างน้อย 2 ตัวอักษร'),
     customerPhone: z.string().min(9, 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (อย่างน้อย 9 หลัก)'),
     orderType: z.enum(['pickup', 'scheduled_route', 'immediate_local'] as const),
+    paymentMethod: z.enum(['cash', 'promptpay']),
     // Scheduled Route Delivery Fields
     scheduledDeliveryDate: z.string().optional(),
     scheduledDeliveryScheduleId: z.string().optional(),
@@ -94,6 +105,7 @@ export default function CheckoutPage() {
   const [serverError, setServerError] = useState('')
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [, setSuccessOrder] = useState<Order | null>(null)
+  const [copiedPhone, setCopiedPhone] = useState(false)
 
   // Real-time time window tracking (Updates every 10 seconds)
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -145,6 +157,7 @@ export default function CheckoutPage() {
     resolver: zodResolver(schema),
     defaultValues: {
       orderType: pickupAvailable ? 'pickup' : upcomingSchedules.length > 0 ? 'scheduled_route' : 'pickup',
+      paymentMethod: 'cash',
       scheduledDeliveryDate: availableDates[0] || '',
       scheduledDeliveryScheduleId: '',
       deliveryAddress: '',
@@ -153,6 +166,7 @@ export default function CheckoutPage() {
   })
 
   const orderType = watch('orderType')
+  const paymentMethod = watch('paymentMethod')
   const selectedDate = watch('scheduledDeliveryDate')
   const selectedScheduleId = watch('scheduledDeliveryScheduleId')
 
@@ -193,6 +207,17 @@ export default function CheckoutPage() {
   const deliveryFee = orderType === 'immediate_local' ? IMMEDIATE_DELIVERY_FEE : 0
   const grandTotal = cartFinalTotal + deliveryFee
 
+  // PromptPay QR payload (dynamically recalculated with grandTotal)
+  const promptPayPayload = useMemo(() => {
+    return generatePromptPayPayload(grandTotal, PROMPTPAY_PHONE)
+  }, [grandTotal])
+
+  const copyPhoneNumber = () => {
+    navigator.clipboard.writeText(PROMPTPAY_PHONE)
+    setCopiedPhone(true)
+    setTimeout(() => setCopiedPhone(false), 2500)
+  }
+
   // Submit Order
   const onSubmit = async (data: CheckoutForm) => {
     setIsSubmitting(true)
@@ -232,6 +257,7 @@ export default function CheckoutPage() {
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         orderType: data.orderType,
+        paymentMethod: data.paymentMethod,
         deliveryFee,
         deliveryAddress: finalDeliveryAddress,
         scheduledDeliveryDate,
@@ -790,6 +816,161 @@ export default function CheckoutPage() {
               <span className="text-[hsl(var(--primary))]">{formatCurrency(grandTotal)}</span>
             </div>
           </div>
+        </div>
+
+        {/* Payment Method Selection */}
+        <div className="space-y-4 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-[hsl(var(--foreground))] flex items-center gap-2">
+              <Banknote className="h-4 w-4 text-[hsl(var(--primary))]" /> เลือกวิธีชำระเงิน (Payment Method) <span className="text-rose-500">*</span>
+            </h2>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {/* OPTION 1: Cash */}
+            <div
+              onClick={() => setValue('paymentMethod', 'cash')}
+              className={`relative flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-all ${
+                paymentMethod === 'cash'
+                  ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5 shadow-sm ring-1 ring-[hsl(var(--primary))]'
+                  : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:border-[hsl(var(--primary))]/40 hover:bg-[hsl(var(--accent))]'
+              }`}
+            >
+              <input type="radio" value="cash" {...register('paymentMethod')} className="sr-only" />
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                  paymentMethod === 'cash'
+                    ? 'bg-[hsl(var(--primary))] text-white shadow-md shadow-[hsl(var(--primary))]/20'
+                    : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'
+                }`}
+              >
+                <Banknote className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <span
+                  className={`text-sm font-bold block ${
+                    paymentMethod === 'cash' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--foreground))]'
+                  }`}
+                >
+                  เงินสด (Cash)
+                </span>
+                <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
+                  ชำระเงินสดกับพนักงานเมื่อได้รับสินค้า
+                </p>
+              </div>
+            </div>
+
+            {/* OPTION 2: Scan to Pay / PromptPay */}
+            <div
+              onClick={() => setValue('paymentMethod', 'promptpay')}
+              className={`relative flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-all ${
+                paymentMethod === 'promptpay'
+                  ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5 shadow-sm ring-1 ring-[hsl(var(--primary))]'
+                  : 'border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:border-[hsl(var(--primary))]/40 hover:bg-[hsl(var(--accent))]'
+              }`}
+            >
+              <input type="radio" value="promptpay" {...register('paymentMethod')} className="sr-only" />
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                  paymentMethod === 'promptpay'
+                    ? 'bg-[hsl(var(--primary))] text-white shadow-md shadow-[hsl(var(--primary))]/20'
+                    : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'
+                }`}
+              >
+                <QrCode className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <span
+                  className={`text-sm font-bold block ${
+                    paymentMethod === 'promptpay' ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--foreground))]'
+                  }`}
+                >
+                  สแกนจ่าย (PromptPay QR)
+                </span>
+                <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
+                  สแกนจ่ายผ่าน Mobile Banking ทุกธนาคาร
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {errors.paymentMethod && (
+            <p className="text-xs text-[hsl(var(--destructive))]">{errors.paymentMethod.message}</p>
+          )}
+
+          {/* Conditional PromptPay QR Display */}
+          <AnimatePresence>
+            {paymentMethod === 'promptpay' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden border-t border-[hsl(var(--border))] pt-4"
+              >
+                <div className="mx-auto max-w-sm rounded-3xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-5 shadow-sm text-center">
+                  {/* PromptPay Brand Header */}
+                  <div className="mb-4 rounded-2xl bg-gradient-to-r from-[#113566] to-[#005a9e] py-2.5 px-4 text-white shadow-sm">
+                    <p className="text-xs tracking-wider opacity-80 uppercase font-medium">พร้อมเพย์</p>
+                    <h3 className="text-lg font-black tracking-wide">PromptPay</h3>
+                  </div>
+
+                  {/* QR Code Container */}
+                  <div className="mx-auto my-3 flex w-fit items-center justify-center rounded-2xl bg-white p-4 shadow-inner ring-1 ring-black/5">
+                    <QRCodeSVG
+                      value={promptPayPayload}
+                      size={190}
+                      level="M"
+                      includeMargin={false}
+                    />
+                  </div>
+
+                  {/* Account Details & Amount */}
+                  <div className="mt-3 space-y-2">
+                    <div className="rounded-xl bg-[hsl(var(--muted))]/50 p-2.5 flex items-center justify-between">
+                      <div className="text-left">
+                        <span className="text-[10px] uppercase font-bold text-[hsl(var(--muted-foreground))] block">
+                          เบอร์พร้อมเพย์ (PromptPay No.)
+                        </span>
+                        <span className="text-sm font-extrabold text-[hsl(var(--foreground))]">
+                          {formatPromptPayPhone(PROMPTPAY_PHONE)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={copyPhoneNumber}
+                        className="flex items-center gap-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2.5 py-1 text-xs font-semibold text-[hsl(var(--foreground))] hover:bg-[hsl(var(--accent))] transition-colors"
+                      >
+                        {copiedPhone ? (
+                          <>
+                            <Check className="h-3 w-3 text-emerald-500" />
+                            <span className="text-emerald-500">คัดลอกแล้ว</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3" />
+                            <span>คัดลอกเบอร์</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-2.5 flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                        ยอดชำระที่ต้องโอน:
+                      </span>
+                      <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(grandTotal)}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-[hsl(var(--muted-foreground))] pt-1">
+                      💡 สแกน QR ด้วยแอปธนาคาร ยอดเงินจะถูกกรอกให้อัตโนมัติตรงตามออเดอร์
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Server error banner */}
