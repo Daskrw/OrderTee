@@ -155,6 +155,10 @@ export interface Website {
 export interface Settings {
   id: string
   store_name: string
+  store_description: string | null
+  store_phone: string | null
+  store_address: string | null
+  promptpay_number: string | null
   primary_color: string
   is_open: boolean
   updated_at: string

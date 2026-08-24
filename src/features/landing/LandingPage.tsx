@@ -2,9 +2,11 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ShoppingBag, Shield } from 'lucide-react'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { useStoreStatus } from '@/hooks/use-store-status'
 
 export default function LandingPage() {
   const navigate = useNavigate()
+  const { storeName, storeDescription } = useStoreStatus()
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[hsl(var(--background))] px-4">
@@ -42,16 +44,16 @@ export default function LandingPage() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="mb-1 text-3xl font-bold tracking-tight text-[hsl(var(--foreground))] sm:text-4xl"
         >
-          OrderTee
+          {storeName}
         </motion.h1>
 
         <motion.p
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
-          className="mb-10 text-[hsl(var(--muted-foreground))]"
+          className="mb-10 text-center text-[hsl(var(--muted-foreground))]"
         >
-          สั่งอาหารออนไลน์ ทำได้ง่ายๆ
+          {storeDescription || 'สั่งอาหารออนไลน์ ทำได้ง่ายๆ'}
         </motion.p>
 
         {/* Two cards */}

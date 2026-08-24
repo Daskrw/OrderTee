@@ -35,6 +35,7 @@ import { useCartPromotions } from '@/hooks/useCartPromotions'
 import { createOrder, uploadPaymentSlip } from '@/services/orders'
 import { fetchActiveUpcomingSchedules } from '@/services/delivery'
 import { formatCurrency } from '@/lib/utils'
+import { useStoreStatus } from '@/hooks/use-store-status'
 import {
   generatePromptPayPayload,
   formatPromptPayPhone,
@@ -103,6 +104,8 @@ export default function CheckoutPage() {
   const clearCart = useCartStore((s) => s.clearCart)
   const cartSubtotal = useCartStore(selectCartTotal)
   const { discountAmount, finalTotal: cartFinalTotal, appliedPromotions } = useCartPromotions()
+  const { promptpayNumber } = useStoreStatus()
+  const activePromptPayNumber = promptpayNumber || PROMPTPAY_PHONE
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
@@ -222,13 +225,13 @@ export default function CheckoutPage() {
   const deliveryFee = orderType === 'immediate_local' ? IMMEDIATE_DELIVERY_FEE : 0
   const grandTotal = cartFinalTotal + deliveryFee
 
-  // PromptPay QR payload (dynamically recalculated with grandTotal)
+  // PromptPay QR payload (dynamically recalculated with grandTotal & activePromptPayNumber)
   const promptPayPayload = useMemo(() => {
-    return generatePromptPayPayload(grandTotal, PROMPTPAY_PHONE)
-  }, [grandTotal])
+    return generatePromptPayPayload(grandTotal, activePromptPayNumber)
+  }, [grandTotal, activePromptPayNumber])
 
   const copyPhoneNumber = () => {
-    navigator.clipboard.writeText(PROMPTPAY_PHONE)
+    navigator.clipboard.writeText(activePromptPayNumber)
     setCopiedPhone(true)
     setTimeout(() => setCopiedPhone(false), 2500)
   }
@@ -996,7 +999,7 @@ export default function CheckoutPage() {
                           เบอร์พร้อมเพย์ (PromptPay No.)
                         </span>
                         <span className="text-sm font-extrabold text-[hsl(var(--foreground))]">
-                          {formatPromptPayPhone(PROMPTPAY_PHONE)}
+                          {formatPromptPayPhone(activePromptPayNumber)}
                         </span>
                       </div>
                       <button

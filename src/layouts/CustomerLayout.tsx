@@ -1,14 +1,10 @@
 import { Outlet, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { fetchSettings } from '@/services/settings'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { MapPin, Phone, Clock, Globe, MessageCircle } from 'lucide-react'
-import type { Settings, Website } from '@/types/database'
-
-async function fetchSettings(): Promise<Settings | null> {
-  const { data } = await supabase.from('settings').select('*').limit(1).single()
-  return data
-}
+import type { Website } from '@/types/database'
 
 async function fetchWebsite(): Promise<Website | null> {
   const { data } = await supabase.from('website').select('*').limit(1).single()
@@ -19,7 +15,7 @@ export function CustomerLayout() {
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: fetchSettings,
-    staleTime: 1000 * 60 * 10,
+    staleTime: 1000 * 30, // 30 seconds fresh
   })
 
   const { data: website } = useQuery({
@@ -27,6 +23,10 @@ export function CustomerLayout() {
     queryFn: fetchWebsite,
     refetchInterval: 10000, // Real-time fetch every 10 seconds for footer
   })
+
+  const contactLocation = website?.location || settings?.store_address
+  const contactPhone = website?.phone || settings?.store_phone
+  const description = website?.business_description || settings?.store_description
 
   return (
     <div className="flex min-h-screen flex-col bg-[hsl(var(--background))]">
@@ -54,18 +54,18 @@ export function CustomerLayout() {
             
             <div className="space-y-4">
               <h3 className="text-lg font-bold text-[hsl(var(--foreground))]">{settings?.store_name || 'OrderTee'}</h3>
-              {website?.business_description && (
-                <p className="text-sm leading-relaxed">{website.business_description}</p>
+              {description && (
+                <p className="text-sm leading-relaxed">{description}</p>
               )}
             </div>
 
             <div className="space-y-4">
               <h3 className="text-lg font-bold text-[hsl(var(--foreground))]">ติดต่อเรา (Contact Us)</h3>
               <div className="space-y-3 text-sm">
-                {website?.location && (
+                {contactLocation && (
                   <div className="flex items-start gap-3">
                     <MapPin className="h-5 w-5 shrink-0 text-[hsl(var(--primary))]" />
-                    <span>{website.location}</span>
+                    <span>{contactLocation}</span>
                   </div>
                 )}
                 {website?.opening_hours && (
@@ -74,10 +74,12 @@ export function CustomerLayout() {
                     <span>{website.opening_hours}</span>
                   </div>
                 )}
-                {website?.phone && (
+                {contactPhone && (
                   <div className="flex items-center gap-3">
                     <Phone className="h-5 w-5 shrink-0 text-[hsl(var(--primary))]" />
-                    <a href={`tel:${website.phone}`} className="hover:text-[hsl(var(--primary))] transition-colors">{website.phone}</a>
+                    <a href={`tel:${contactPhone}`} className="hover:text-[hsl(var(--primary))] transition-colors">
+                      {contactPhone}
+                    </a>
                   </div>
                 )}
               </div>

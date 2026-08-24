@@ -162,6 +162,10 @@ CREATE TABLE website (
 CREATE TABLE settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   store_name TEXT NOT NULL DEFAULT 'OrderTee',
+  store_description TEXT DEFAULT 'ร้านชาและเครื่องดื่ม สดชื่นทุกแก้ว',
+  store_phone TEXT DEFAULT '0616080720',
+  store_address TEXT DEFAULT 'อาคารหลัก ร้านค้า OrderTee',
+  promptpay_number TEXT DEFAULT '0616080720',
   primary_color TEXT NOT NULL DEFAULT '#f48c2e',
   is_open BOOLEAN NOT NULL DEFAULT true,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
